@@ -9,6 +9,7 @@
   const isMac = navigator.platform.toLowerCase().includes('mac');
 
   let current = '';
+  let currentPretty = ''; // main trả sẵn dạng hiển thị, khỏi gọi IPC lại
   let defaultHotkey = '';
   let recording = false;
 
@@ -24,10 +25,7 @@
     NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult',
     NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
   };
-  const MODIFIER_CODES = new Set([
-    'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight',
-    'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight', 'CapsLock', 'Fn',
-  ]);
+  const isModifier = (e: KeyboardEvent) => ['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'Fn'].includes(e.key);
 
   function keyFromCode(code: string): string | null {
     if (/^Key[A-Z]$/.test(code)) return code.slice(3);
@@ -62,8 +60,8 @@
     msg.dataset.kind = kind;
   }
 
-  async function showCurrent(): Promise<void> {
-    field.textContent = current ? await window.api.settings.pretty(current) : 'Chưa gán';
+  function showCurrent(): void {
+    field.textContent = current ? currentPretty : 'Chưa gán';
     resetBtn.disabled = current === defaultHotkey;
   }
 
@@ -76,12 +74,12 @@
     setMsg('Esc để huỷ. Cần ít nhất 1 phím bổ trợ (Ctrl, Alt, Shift, ⌘/Win), trừ F1 đến F24 và PrintScreen.');
   }
 
-  async function stopRecording(): Promise<void> {
+  function stopRecording(): void {
     if (!recording) return;
     recording = false;
     field.classList.remove('recording');
     window.api.settings.setRecording(false);
-    await showCurrent();
+    showCurrent();
   }
 
   async function apply(accel: string): Promise<void> {
@@ -91,28 +89,29 @@
     const res = await window.api.settings.setHotkey(accel);
     if (res.ok) {
       current = res.hotkey;
+      currentPretty = res.pretty;
       setMsg(`Đã lưu. Bấm ${res.pretty} ở bất cứ đâu để chụp.`, 'ok');
     } else {
       setMsg(res.error, 'error');
     }
     window.api.settings.setRecording(false);
-    await showCurrent();
+    showCurrent();
   }
 
-  field.addEventListener('click', () => (recording ? void stopRecording() : startRecording()));
-  field.addEventListener('blur', () => void stopRecording());
+  field.addEventListener('click', () => (recording ? stopRecording() : startRecording()));
+  field.addEventListener('blur', stopRecording);
 
   window.addEventListener('keydown', (e) => {
     if (!recording) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.code === 'Escape' && !modifiers(e).length) {
-      void stopRecording();
+      stopRecording();
       setMsg('Đã huỷ, giữ nguyên phím tắt cũ.');
       return;
     }
     const mods = modifiers(e);
-    if (MODIFIER_CODES.has(e.code)) {
+    if (isModifier(e)) {
       field.textContent = prettyLive(mods) || 'Bấm tổ hợp phím…';
       return;
     }
@@ -132,7 +131,7 @@
   });
 
   window.addEventListener('keyup', (e) => {
-    if (recording && MODIFIER_CODES.has(e.code)) {
+    if (recording && isModifier(e)) {
       field.textContent = prettyLive(modifiers(e)) || 'Bấm tổ hợp phím…';
     }
   });
@@ -152,10 +151,11 @@
   async function boot(): Promise<void> {
     const s = await window.api.settings.get();
     current = s.hotkey;
+    currentPretty = s.pretty;
     defaultHotkey = s.defaultHotkey;
     enterPastes.checked = s.enterPastes;
     el('pasteKey').textContent = isMac ? '⌘V' : 'Ctrl+V';
-    await showCurrent();
+    showCurrent();
     if (!s.active) {
       setMsg(`${s.pretty} đang bị app khác dùng nên chưa hoạt động. Bấm vào ô trên để chọn phím khác.`, 'error');
     } else {

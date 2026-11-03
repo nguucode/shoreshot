@@ -1,4 +1,11 @@
 // ShoreShot editor (renderer). Script thuần, không import, chạy trong overlay toàn màn hình.
+// Overlay được tạo sẵn và dùng lại: mỗi lần chụp main gửi 'capture:show', đóng thì 'capture:hidden'.
+//
+// Các lớp vẽ (dưới lên trên), để mỗi lần di chuột chỉ tốn đúng phần đang đổi:
+//   #bg     ảnh chụp, vẽ 1 lần mỗi lần chụp.
+//   #sel    lớp tối + khung vùng chọn bằng CSS box-shadow: chỉ tô màu đặc, không vẽ lại ảnh.
+//   #stage  các hình đã chốt, chỉ to bằng vùng chọn, vẽ lại khi undo/redo/sửa chữ.
+//   #draft  hình đang vẽ dở, xoá vẽ lại mỗi lần di chuột.
 
 type Tool = 'rect' | 'pen' | 'text';
 interface Pt { x: number; y: number }
@@ -15,11 +22,10 @@ const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helv
 const LINE_HEIGHT = 1.2;
 
 const ed = {
-  phase: 'loading' as 'loading' | 'selecting' | 'editing',
-  img: new Image(),
+  phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'exporting',
   viewW: 0,
   viewH: 0,
-  dpr: window.devicePixelRatio || 1,
+  k: 1, // pixel ảnh / CSS px
   selection: null as Box | null,
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
@@ -34,11 +40,17 @@ const ed = {
   enterPastes: false, // Enter / nút ✓ = copy + tự dán
   pendingPaste: false, // chờ nhả hết phím bổ trợ rồi mới dán
   hudTimer: 0 as number,
+  barSize: null as { w: number; h: number } | null, // toolbar cố định kích thước, đo 1 lần
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const canvas = $<HTMLCanvasElement>('stage');
-const ctx = canvas.getContext('2d')!;
+const bg = $<HTMLCanvasElement>('bg');
+const bgCtx = bg.getContext('2d')!;
+const selEl = $<HTMLDivElement>('sel');
+const stage = $<HTMLCanvasElement>('stage');
+const ctx = stage.getContext('2d')!;
+const draftCv = $<HTMLCanvasElement>('draft');
+const draftCtx = draftCv.getContext('2d')!;
 const toolbarEl = $<HTMLDivElement>('toolbar');
 const sizeBadge = $<HTMLDivElement>('sizeBadge');
 const hud = $<HTMLDivElement>('hud');
@@ -46,6 +58,8 @@ const hint = $<HTMLDivElement>('hint');
 const textInput = $<HTMLTextAreaElement>('textInput');
 const colorInput = $<HTMLInputElement>('colorCustom');
 const sizeReadout = $<HTMLSpanElement>('sizeReadout');
+const btnUndo = $<HTMLButtonElement>('btnUndo');
+const colorWrap = $('colorCustomWrap');
 
 // ---------- helpers ----------
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -61,8 +75,26 @@ const clampToSel = (p: Pt): Pt => {
   return { x: clamp(p.x, s.x, s.x + s.w), y: clamp(p.y, s.y, s.y + s.h) };
 };
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
-const pixelScale = () => (ed.viewW ? ed.img.naturalWidth / ed.viewW : 1);
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
+const place = (el: HTMLElement, b: Box) => {
+  el.style.transform = `translate(${b.x}px, ${b.y}px)`;
+  el.style.width = `${b.w}px`;
+  el.style.height = `${b.h}px`;
+};
+
+/** Bitmap thô -> ImageData. RGBA dùng thẳng; BGRA (Chromium, little-endian) thì đổi chỗ kênh R và B. */
+function toImageData(bitmap: Uint8Array, w: number, h: number, bgra: boolean): ImageData {
+  if (!bgra) return new ImageData(new Uint8ClampedArray(bitmap.buffer as ArrayBuffer, bitmap.byteOffset, w * h * 4), w, h);
+  const bytes = bitmap.byteOffset % 4 ? bitmap.slice() : bitmap; // Uint32Array cần offset chia hết cho 4
+  const src = new Uint32Array(bytes.buffer, bytes.byteOffset, w * h);
+  const out = new ImageData(w, h);
+  const dst = new Uint32Array(out.data.buffer);
+  for (let i = 0; i < src.length; i++) {
+    const p = src[i];
+    dst[i] = (p & 0xff00ff00) | ((p & 0xff) << 16) | ((p >>> 16) & 0xff);
+  }
+  return out;
+}
 
 // ---------- drawing ----------
 function drawShape(c: CanvasRenderingContext2D, s: Shape): void {
@@ -116,40 +148,19 @@ function textBounds(s: TextShape): Box {
   return { x: s.x, y: s.y, w, h: lines.length * s.size * LINE_HEIGHT };
 }
 
-function render(): void {
-  const { viewW: W, viewH: H } = ed;
-  ctx.setTransform(ed.dpr, 0, 0, ed.dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(ed.img, 0, 0, W, H);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(0, 0, W, H);
-
+/** Khung vùng chọn, badge kích thước, toolbar: chỉ đổi style, không vẽ canvas. */
+function layout(): void {
   if (ed.selection) {
     const s = norm(ed.selection);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(s.x, s.y, s.w, s.h);
-    ctx.clip();
-    ctx.drawImage(ed.img, 0, 0, W, H);
-    ed.shapes.forEach((sh) => drawShape(ctx, sh));
-    if (ed.draft) drawShape(ctx, ed.draft);
-    ctx.restore();
-
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(Math.round(s.x) + 0.5, Math.round(s.y) + 0.5, Math.round(s.w) - 1, Math.round(s.h) - 1);
-    ctx.fillStyle = '#3b82f6';
-    for (const [hx, hy] of [
-      [s.x, s.y], [s.x + s.w, s.y], [s.x, s.y + s.h], [s.x + s.w, s.y + s.h],
-      [s.x + s.w / 2, s.y], [s.x + s.w / 2, s.y + s.h], [s.x, s.y + s.h / 2], [s.x + s.w, s.y + s.h / 2],
-    ]) ctx.fillRect(hx - 3, hy - 3, 6, 6);
-
-    const k = pixelScale();
-    sizeBadge.textContent = `${Math.round(s.w * k)} × ${Math.round(s.h * k)}`;
+    place(selEl, s);
+    selEl.classList.remove('empty');
+    sizeBadge.textContent = `${Math.round(s.w * ed.k)} × ${Math.round(s.h * ed.k)}`;
     sizeBadge.classList.remove('hidden');
     const by = s.y - 28 >= 4 ? s.y - 28 : s.y + 6;
     sizeBadge.style.transform = `translate(${Math.max(4, s.x)}px, ${by}px)`;
   } else {
+    place(selEl, { x: 0, y: 0, w: 0, h: 0 }); // box-shadow của khung 0×0 vẫn phủ tối cả màn hình
+    selEl.classList.add('empty');
     sizeBadge.classList.add('hidden');
   }
   positionToolbar();
@@ -161,15 +172,51 @@ function positionToolbar(): void {
     return;
   }
   toolbarEl.classList.remove('hidden');
+  ed.barSize ??= { w: toolbarEl.offsetWidth, h: toolbarEl.offsetHeight };
+  const { w: tw, h: th } = ed.barSize;
   const s = norm(ed.selection);
-  const tw = toolbarEl.offsetWidth;
-  const th = toolbarEl.offsetHeight;
   const gap = 8;
   let y = s.y + s.h + gap;
   if (y + th > ed.viewH - 4) y = s.y - th - gap;
   if (y < 4) y = s.y + s.h - th - gap;
   const x = clamp(s.x + s.w - tw, 4, ed.viewW - tw - 4);
   toolbarEl.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+/** Đặt #stage và #draft đúng vùng chọn (gọi khi vào editing). Toạ độ vẽ vẫn là CSS px của màn hình. */
+function setupLayers(): void {
+  const s = norm(ed.selection!);
+  for (const [cv, c] of [[stage, ctx], [draftCv, draftCtx]] as const) {
+    cv.width = Math.max(1, Math.round(s.w * ed.k));
+    cv.height = Math.max(1, Math.round(s.h * ed.k));
+    place(cv, s);
+    cv.classList.remove('hidden');
+    c.setTransform(ed.k, 0, 0, ed.k, -s.x * ed.k, -s.y * ed.k);
+  }
+}
+
+function hideLayers(): void {
+  for (const cv of [stage, draftCv]) {
+    cv.classList.add('hidden');
+    cv.width = cv.height = 1; // trả bộ nhớ
+  }
+}
+
+function clearLayer(c: CanvasRenderingContext2D): void {
+  const s = norm(ed.selection!);
+  c.clearRect(s.x, s.y, s.w, s.h);
+}
+
+/** Vẽ lại toàn bộ hình đã chốt (undo/redo/sửa chữ). Thêm hình mới thì chỉ vẽ thêm hình đó. */
+function redrawShapes(): void {
+  if (ed.phase !== 'editing') return;
+  clearLayer(ctx);
+  ed.shapes.forEach((sh) => drawShape(ctx, sh));
+}
+
+function drawDraft(): void {
+  clearLayer(draftCtx);
+  if (ed.draft) drawShape(draftCtx, ed.draft);
 }
 
 // ---------- UI state ----------
@@ -181,11 +228,11 @@ function syncToolbar(): void {
     b.classList.toggle('active', b.dataset.color!.toLowerCase() === ed.color.toLowerCase()),
   );
   colorInput.value = ed.color;
-  $('colorCustomWrap').style.setProperty('--c', ed.color);
+  colorWrap.style.setProperty('--c', ed.color);
   const t = activeSizeTool();
   sizeReadout.textContent = `${SIZE_LABEL[t]} ${ed.sizes[t]}`;
-  ($('btnUndo') as HTMLButtonElement).disabled = ed.shapes.length === 0;
-  canvas.style.cursor = ed.phase === 'editing' && ed.tool === 'text' ? 'text' : 'crosshair';
+  btnUndo.disabled = ed.shapes.length === 0;
+  document.body.style.cursor = ed.phase === 'editing' && ed.tool === 'text' ? 'text' : 'crosshair';
 }
 
 function showHud(msg: string, x: number, y: number): void {
@@ -205,14 +252,17 @@ function setTool(t: Tool): void {
 function setColor(c: string): void {
   ed.color = c;
   if (ed.textEdit) textInput.style.color = c;
-  if (ed.draft) ed.draft.color = c;
+  if (ed.draft) {
+    ed.draft.color = c;
+    drawDraft();
+  }
   syncToolbar();
-  render();
 }
 
 function pushShape(s: Shape): void {
   ed.shapes.push(s);
   ed.redo = [];
+  drawShape(ctx, s);
   syncToolbar();
 }
 
@@ -222,6 +272,7 @@ function openText(x: number, y: number, original: TextShape | null): void {
   if (original) {
     ed.color = original.color;
     ed.sizes.text = original.size;
+    redrawShapes(); // chữ cũ đã bị gỡ khỏi shapes để sửa trong ô nhập
   }
   textInput.value = original?.text ?? '';
   textInput.classList.remove('hidden');
@@ -229,7 +280,6 @@ function openText(x: number, y: number, original: TextShape | null): void {
   textInput.style.top = `${y}px`;
   applyTextStyle();
   syncToolbar();
-  render();
   requestAnimationFrame(() => textInput.focus());
 }
 
@@ -260,7 +310,6 @@ function commitText(): void {
   textInput.blur();
   if (text.trim()) pushShape({ kind: 'text', x, y, text, color: ed.color, size: ed.sizes.text });
   syncToolbar();
-  render();
 }
 
 function cancelText(): void {
@@ -268,9 +317,11 @@ function cancelText(): void {
   const original = ed.textEdit.original;
   ed.textEdit = null;
   textInput.classList.add('hidden');
-  if (original) ed.shapes.push(original); // khôi phục chữ cũ nếu đang sửa
+  if (original) {
+    ed.shapes.push(original); // khôi phục chữ cũ nếu đang sửa
+    drawShape(ctx, original);
+  }
   syncToolbar();
-  render();
 }
 
 function hitText(p: Pt): number {
@@ -287,36 +338,46 @@ function undo(): void {
   const s = ed.shapes.pop();
   if (s) ed.redo.push(s);
   syncToolbar();
-  render();
+  redrawShapes();
 }
 function redoAction(): void {
   const s = ed.redo.pop();
-  if (s) ed.shapes.push(s);
+  if (!s) return;
+  ed.shapes.push(s);
+  drawShape(ctx, s);
   syncToolbar();
-  render();
 }
 
-function exportPNG(): string {
+/** PNG của vùng chọn ở độ phân giải thật. toBlob encode ở thread nền nên không đứng UI. */
+async function exportPNG(): Promise<Uint8Array> {
   commitText();
   const s = norm(ed.selection!);
-  const k = pixelScale();
+  const k = ed.k;
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(s.w * k));
   out.height = Math.max(1, Math.round(s.h * k));
   const c = out.getContext('2d')!;
-  c.drawImage(ed.img, s.x * k, s.y * k, s.w * k, s.h * k, 0, 0, out.width, out.height);
+  c.drawImage(bg, s.x * k, s.y * k, s.w * k, s.h * k, 0, 0, out.width, out.height);
   c.setTransform(k, 0, 0, k, -s.x * k, -s.y * k);
   ed.shapes.forEach((sh) => drawShape(c, sh));
-  return out.toDataURL('image/png');
+  const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
+  if (!blob) throw new Error('Không xuất được ảnh');
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
-async function copyAndClose(): Promise<void> {
+/** Xuất ảnh rồi gửi sang main (copy / copyPaste / save); xong việc main tự ẩn overlay. */
+async function act(send: (png: Uint8Array) => Promise<boolean>): Promise<void> {
   if (ed.phase !== 'editing') return;
-  await window.api.copy(exportPNG());
-}
-async function pasteAndClose(): Promise<void> {
-  if (ed.phase !== 'editing') return;
-  await window.api.copyPaste(exportPNG());
+  ed.phase = 'exporting'; // chặn bấm 2 lần trong lúc đang encode
+  let ok = false;
+  try {
+    const png = await exportPNG();
+    // Bấm Esc trong lúc encode: overlay đã ẩn và reset, bỏ ảnh này.
+    if (ed.phase === 'exporting') ok = await send(png);
+  } finally {
+    // Huỷ hộp thoại Save (hoặc lỗi): quay lại sửa tiếp. Main đã ẩn overlay thì reset() đã đổi phase.
+    if (!ok && ed.phase === 'exporting') ed.phase = 'editing';
+  }
 }
 
 const modsHeld = (e: KeyboardEvent) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
@@ -327,25 +388,17 @@ function requestPaste(e?: KeyboardEvent): void {
     ed.pendingPaste = true;
     return;
   }
-  void pasteAndClose();
+  void act(window.api.copyPaste);
 }
 
 /** Hành động chính (Enter, nút ✓) và hành động phụ, theo cài đặt. */
 function primaryAction(e?: KeyboardEvent): void {
   if (ed.enterPastes) requestPaste(e);
-  else void copyAndClose();
+  else void act(window.api.copy);
 }
 function secondaryAction(): void {
-  if (ed.enterPastes) void copyAndClose();
+  if (ed.enterPastes) void act(window.api.copy);
   else requestPaste();
-}
-
-async function saveAndClose(): Promise<void> {
-  if (ed.phase !== 'editing') return;
-  await window.api.save(exportPNG());
-}
-function closeOverlay(): void {
-  window.api.close();
 }
 
 function startSelecting(p: Pt): void {
@@ -355,17 +408,19 @@ function startSelecting(p: Pt): void {
   ed.selStart = p;
   ed.selection = { x: p.x, y: p.y, w: 0, h: 0 };
   hint.classList.add('hidden');
+  hideLayers();
 }
 
 // ---------- pointer ----------
 const pt = (e: MouseEvent): Pt => ({ x: e.clientX, y: e.clientY });
+const onToolbar = (e: MouseEvent) => !!(e.target as Element).closest('#toolbar');
 
-canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
+window.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || onToolbar(e)) return;
   const p = pt(e);
   if (ed.phase === 'selecting') {
     startSelecting(p);
-    render();
+    layout();
     return;
   }
   if (ed.phase !== 'editing' || !ed.selection) return;
@@ -376,7 +431,7 @@ canvas.addEventListener('mousedown', (e) => {
     // Chưa vẽ gì thì cho chọn lại vùng mới.
     if (ed.shapes.length === 0) {
       startSelecting(p);
-      render();
+      layout();
       syncToolbar();
     }
     return;
@@ -404,7 +459,7 @@ canvas.addEventListener('mousedown', (e) => {
     ed.tool === 'rect'
       ? { kind: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: ed.color, size: ed.sizes.rect }
       : { kind: 'pen', points: [p], color: ed.color, size: ed.sizes.pen };
-  render();
+  drawDraft();
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -412,7 +467,7 @@ window.addEventListener('mousemove', (e) => {
   if (ed.phase === 'selecting' && ed.selStart && ed.selection) {
     const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
     ed.selection = { x: ed.selStart.x, y: ed.selStart.y, w: q.x - ed.selStart.x, h: q.y - ed.selStart.y };
-    render();
+    layout();
     return;
   }
   if (ed.draft && ed.draftStart) {
@@ -423,7 +478,7 @@ window.addEventListener('mousemove', (e) => {
     } else if (ed.draft.kind === 'pen') {
       ed.draft.points.push(q);
     }
-    render();
+    drawDraft();
   }
 });
 
@@ -436,32 +491,35 @@ window.addEventListener('mouseup', (e) => {
     ed.selection = s;
     ed.selStart = null;
     ed.phase = 'editing';
+    setupLayers();
     syncToolbar();
-    render();
+    layout();
     return;
   }
   if (ed.draft) {
     const d = ed.draft;
     ed.draft = null;
     ed.draftStart = null;
+    drawDraft();
     const keep = d.kind === 'rect' ? Math.abs(d.w) > 2 && Math.abs(d.h) > 2 : d.kind === 'pen';
     if (keep) pushShape(d);
-    render();
   }
 });
 
-canvas.addEventListener('contextmenu', (e) => {
+window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+  if (onToolbar(e) || e.target === textInput) return;
   if (ed.textEdit) return cancelText();
   if (ed.phase === 'editing' && ed.shapes.length === 0) {
     // Chuột phải khi chưa vẽ: bỏ vùng chọn, chọn lại.
     ed.phase = 'selecting';
     ed.selection = null;
     hint.classList.remove('hidden');
+    hideLayers();
     syncToolbar();
-    render();
+    layout();
   } else if (ed.phase === 'selecting' && !ed.selStart) {
-    closeOverlay();
+    window.api.close();
   }
 });
 
@@ -487,11 +545,13 @@ window.addEventListener(
     const [min, max] = SIZE_LIMITS[t];
     // Lăn lên = to hơn, lăn xuống = nhỏ hơn.
     ed.sizes[t] = clamp(ed.sizes[t] - dir * SIZE_STEP[t], min, max);
-    if (ed.draft && ed.draft.kind === t) ed.draft.size = ed.sizes[t];
+    if (ed.draft && ed.draft.kind === t) {
+      ed.draft.size = ed.sizes[t];
+      drawDraft();
+    }
     if (ed.textEdit) applyTextStyle();
     showHud(`${SIZE_LABEL[t]}: ${ed.sizes[t]}px`, e.clientX, e.clientY);
     syncToolbar();
-    render();
   },
   { passive: false },
 );
@@ -513,14 +573,14 @@ textInput.addEventListener('mousedown', (e) => e.stopPropagation());
 window.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
-  if (e.key === 'Escape') return closeOverlay();
+  if (e.key === 'Escape') return window.api.close();
   if (ed.phase !== 'editing') return;
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); return undo(); }
   if ((mod && k === 'z' && e.shiftKey) || (mod && k === 'y')) { e.preventDefault(); return redoAction(); }
   // ⌘V / Ctrl+V (và cả bản có Shift) = copy + tự dán vào app trước đó.
   if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
-  if (mod && k === 'c') { e.preventDefault(); void copyAndClose(); return; }
-  if (mod && k === 's') { e.preventDefault(); void saveAndClose(); return; }
+  if (mod && k === 'c') { e.preventDefault(); void act(window.api.copy); return; }
+  if (mod && k === 's') { e.preventDefault(); void act(window.api.save); return; }
   if (e.key === 'Enter') { e.preventDefault(); return primaryAction(e); }
   if (mod) return;
   if (k === 'r') setTool('rect');
@@ -531,7 +591,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (ed.pendingPaste && !modsHeld(e)) {
     ed.pendingPaste = false;
-    void pasteAndClose();
+    void act(window.api.copyPaste);
   }
 });
 
@@ -546,29 +606,17 @@ toolbarEl.addEventListener('click', (e) => {
   if (btn.dataset.tool) setTool(btn.dataset.tool as Tool);
   else if (btn.dataset.color) setColor(btn.dataset.color);
   else if (btn.id === 'btnUndo') undo();
-  else if (btn.id === 'btnSave') void saveAndClose();
+  else if (btn.id === 'btnSave') void act(window.api.save);
   else if (btn.id === 'btnPrimary') primaryAction();
   else if (btn.id === 'btnSecondary') secondaryAction();
-  else if (btn.id === 'btnClose') closeOverlay();
+  else if (btn.id === 'btnClose') window.api.close();
 });
 colorInput.addEventListener('input', () => setColor(colorInput.value));
 colorInput.addEventListener('change', () => {
   if (ed.textEdit) textInput.focus();
 });
 
-// ---------- boot ----------
-function resize(): void {
-  ed.viewW = window.innerWidth;
-  ed.viewH = window.innerHeight;
-  ed.dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(ed.viewW * ed.dpr);
-  canvas.height = Math.round(ed.viewH * ed.dpr);
-  canvas.style.width = `${ed.viewW}px`;
-  canvas.style.height = `${ed.viewH}px`;
-  if (ed.phase !== 'loading') render();
-}
-window.addEventListener('resize', resize);
-
+// ---------- vòng đời overlay ----------
 const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
 const ICON_PASTE = '<svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>';
 
@@ -585,17 +633,43 @@ function setupActionButtons(): void {
   secondary.innerHTML = ed.enterPastes ? ICON_COPY : ICON_PASTE;
 }
 
-async function boot(): Promise<void> {
-  const cap = await window.api.getCapture();
-  if (!cap) return closeOverlay();
+/** Về trạng thái chờ và nhả bộ nhớ ảnh. Giữ lại công cụ, màu, cỡ nét giữa các lần chụp. */
+function reset(): void {
+  ed.phase = 'loading';
+  ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = null;
+  ed.shapes = [];
+  ed.redo = [];
+  ed.pendingPaste = false;
+  textInput.classList.add('hidden');
+  hud.classList.add('hidden');
+  hint.classList.remove('hidden');
+  hideLayers();
+  bg.width = bg.height = 1;
+  layout();
+}
+
+window.api.onCapture((cap) => {
+  reset();
+  ed.viewW = cap.width;
+  ed.viewH = cap.height;
+  ed.k = cap.pxW / cap.width;
   ed.enterPastes = cap.enterPastes;
   setupActionButtons();
-  ed.img.src = cap.dataURL;
-  await ed.img.decode();
-  resize();
+  bg.width = cap.pxW;
+  bg.height = cap.pxH;
+  bgCtx.putImageData(toImageData(cap.bitmap, cap.pxW, cap.pxH, cap.bgra), 0, 0);
   ed.phase = 'selecting';
   syncToolbar();
-  render();
-  requestAnimationFrame(() => window.api.ready());
-}
-void boot();
+  layout();
+  // Main hiện cửa sổ trong suốt trước; đợi 2 frame cho ảnh mới lên màn rồi mới cho hiện rõ.
+  // macOS có thể coi cửa sổ opacity 0 là bị che và dừng frame, nên quá 100 ms thì báo luôn.
+  let sent = false;
+  const ready = () => {
+    if (sent) return;
+    sent = true;
+    window.api.ready();
+  };
+  requestAnimationFrame(() => requestAnimationFrame(ready));
+  setTimeout(ready, 100);
+});
+window.api.onHidden(reset);

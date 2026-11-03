@@ -1,6 +1,9 @@
 interface ShoreShotCapture {
-  dataURL: string;
-  width: number;
+  bitmap: Uint8Array; // pxW × pxH pixel, RGBA hoặc BGRA
+  bgra: boolean;
+  pxW: number;
+  pxH: number;
+  width: number; // CSS px (DIP)
   height: number;
   enterPastes: boolean;
 }
@@ -19,16 +22,16 @@ type ShoreShotSetHotkeyResult =
   | { ok: false; error: string };
 
 interface ShoreShotApi {
-  getCapture(): Promise<ShoreShotCapture | null>;
+  onCapture(cb: (cap: ShoreShotCapture) => void): void;
+  onHidden(cb: () => void): void;
   ready(): void;
-  copy(dataURL: string): Promise<boolean>;
-  copyPaste(dataURL: string): Promise<boolean>;
-  save(dataURL: string): Promise<boolean>;
+  copy(png: Uint8Array): Promise<boolean>;
+  copyPaste(png: Uint8Array): Promise<boolean>;
+  save(png: Uint8Array): Promise<boolean>;
   close(): void;
   settings: {
     get(): Promise<ShoreShotSettings>;
     setHotkey(accel: string): Promise<ShoreShotSetHotkeyResult>;
-    pretty(accel: string): Promise<string>;
     setRecording(on: boolean): void;
     setEnterPastes(on: boolean): Promise<boolean>;
   };

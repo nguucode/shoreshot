@@ -3,14 +3,11 @@
 #   irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 #
 # Tuỳ chọn: tải script về rồi chạy với tham số
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -FromSource
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -Uninstall
 #
-#   -FromSource   bỏ qua bản build sẵn, build từ source (cần git + Node.js 18+)
 #   -Uninstall    gỡ ShoreShot
 #   -NoLaunch     cài xong không mở app
 param(
-  [switch]$FromSource,
   [switch]$Uninstall,
   [switch]$NoLaunch
 )
@@ -81,56 +78,8 @@ function Install-FromRelease {
   return $true
 }
 
-function New-Shortcut($path, $target) {
-  $ws = New-Object -ComObject WScript.Shell
-  $s = $ws.CreateShortcut($path)
-  $s.TargetPath = $target
-  $s.WorkingDirectory = Split-Path $target
-  $s.Save()
-}
-
-function Install-FromSource {
-  Say 'Build từ source...'
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Die 'Cần git. Cài: winget install Git.Git' }
-  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Die 'Cần Node.js 18+. Cài: winget install OpenJS.NodeJS.LTS' }
-  $major = [int](node -p "process.versions.node.split('.')[0]")
-  if ($major -lt 18) { Die "Node.js $major quá cũ, cần 18+." }
-
-  $src = Join-Path $Tmp 'src'
-  git clone --depth 1 "https://github.com/$Repo.git" $src 2>$null | Out-Null
-  if (-not (Test-Path (Join-Path $src 'package.json'))) { Die 'Không clone được repo.' }
-  Push-Location $src
-  try {
-    Say 'npm install (lần đầu mất 1 đến 3 phút)...'
-    npm install --no-audit --no-fund --loglevel=error
-    if ($LASTEXITCODE -ne 0) { Die 'npm install lỗi.' }
-    npm run build --silent
-    if ($LASTEXITCODE -ne 0) { Die 'Build TypeScript lỗi.' }
-    Say 'Đóng gói app...'
-    $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
-    npx --no-install electron-builder --win --dir --x64 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Die 'electron-builder lỗi.' }
-  } finally { Pop-Location }
-
-  $unpacked = Join-Path $src 'release\win-unpacked'
-  if (-not (Test-Path (Join-Path $unpacked "$AppName.exe"))) { Die "Build xong nhưng không thấy $AppName.exe." }
-
-  Stop-App
-  if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
-  New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-  Copy-Item -Path (Join-Path $unpacked '*') -Destination $InstallDir -Recurse -Force
-  $exe = Join-Path $InstallDir "$AppName.exe"
-  New-Shortcut $StartMenuLnk $exe
-  New-Shortcut $DesktopLnk $exe
-}
-
 try {
-  if ($FromSource) {
-    Install-FromSource
-  } elseif (-not (Install-FromRelease)) {
-    Say 'Chưa có bản build sẵn cho Windows, chuyển sang build từ source.'
-    Install-FromSource
-  }
+  if (-not (Install-FromRelease)) { Die "Chưa có bản build sẵn cho Windows. Xem https://github.com/$Repo/releases" }
 
   $exe = Join-Path $InstallDir "$AppName.exe"
   if (-not (Test-Path $exe)) {

@@ -3,16 +3,16 @@
 const electron = require('electron') as typeof import('electron');
 
 electron.contextBridge.exposeInMainWorld('api', {
-  getCapture: () => electron.ipcRenderer.invoke('capture:get'),
+  onCapture: (cb: (cap: unknown) => void) => electron.ipcRenderer.on('capture:show', (_e, cap) => cb(cap)),
+  onHidden: (cb: () => void) => electron.ipcRenderer.on('capture:hidden', () => cb()),
   ready: () => electron.ipcRenderer.send('capture:ready'),
-  copy: (dataURL: string) => electron.ipcRenderer.invoke('capture:copy', dataURL),
-  save: (dataURL: string) => electron.ipcRenderer.invoke('capture:save', dataURL),
-  copyPaste: (dataURL: string) => electron.ipcRenderer.invoke('capture:copyPaste', dataURL),
+  copy: (png: Uint8Array) => electron.ipcRenderer.invoke('capture:copy', png),
+  save: (png: Uint8Array) => electron.ipcRenderer.invoke('capture:save', png),
+  copyPaste: (png: Uint8Array) => electron.ipcRenderer.invoke('capture:copyPaste', png),
   close: () => electron.ipcRenderer.send('capture:close'),
   settings: {
     get: () => electron.ipcRenderer.invoke('settings:get'),
     setHotkey: (accel: string) => electron.ipcRenderer.invoke('settings:setHotkey', accel),
-    pretty: (accel: string) => electron.ipcRenderer.invoke('settings:pretty', accel),
     setRecording: (on: boolean) => electron.ipcRenderer.send('settings:recording', on),
     setEnterPastes: (on: boolean) => electron.ipcRenderer.invoke('settings:setEnterPastes', on),
   },

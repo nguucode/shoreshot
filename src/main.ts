@@ -13,20 +13,26 @@ import {
   systemPreferences,
   shell,
   Display,
-  IpcMainInvokeEvent,
-  IpcMainEvent,
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { setTimeout as sleep } from 'timers/promises';
+
+const run = promisify(execFile);
 
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
-  dataURL: string; // ảnh full độ phân giải thật (physical px)
+  bitmap: Buffer; // pixel thô, full độ phân giải thật: khỏi encode/decode PNG
+  bgra: boolean; // desktopCapturer ra BGRA, node-screenshots ra RGBA
+  pxW: number;
+  pxH: number;
   width: number; // kích thước màn hình theo CSS px (DIP)
   height: number;
+  enterPastes: boolean;
 }
 
 interface Config {
@@ -41,7 +47,9 @@ let settingsWin: BrowserWindow | null = null;
 let capturing = false;
 let config: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false };
 let hotkeyActive = false; // phím tắt hiện có đang đăng ký thành công không
-const payloads = new Map<number, CapturePayload>();
+let revealTimer: NodeJS.Timeout | undefined;
+let overlayScale = 1; // scaleFactor của màn hình lúc tạo overlay
+let overlayOpen = false; // đang có ảnh chụp dở (kể cả lúc overlay tạm ẩn cho hộp thoại Save)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -52,6 +60,7 @@ app.whenReady().then(async () => {
   config = await loadConfig();
   hotkeyActive = registerHotkey(config.hotkey);
   createTray();
+  overlay = createOverlay(screen.getPrimaryDisplay()); // tạo sẵn để bấm phím tắt là hiện ngay
   if (!hotkeyActive) {
     // Phím tắt đã lưu bị app khác chiếm: mở Cài đặt để người dùng chọn phím khác.
     openSettings();
@@ -92,20 +101,13 @@ function registerHotkey(accel: string): boolean {
   }
 }
 
-function unregisterHotkey(accel: string): void {
-  try {
-    globalShortcut.unregister(accel);
-  } catch {
-    /* bỏ qua */
-  }
-}
-
 type SetHotkeyResult = { ok: true; hotkey: string } | { ok: false; error: string };
 
 async function setHotkey(accel: string): Promise<SetHotkeyResult> {
   const old = config.hotkey;
   if (accel === old && hotkeyActive) return { ok: true, hotkey: old };
-  unregisterHotkey(old);
+  // Chỉ gỡ khi đang đăng ký: phím trong config sửa tay có thể sai cú pháp, unregister sẽ throw.
+  if (hotkeyActive) globalShortcut.unregister(old);
   if (!registerHotkey(accel)) {
     hotkeyActive = registerHotkey(old); // trả lại phím cũ
     return {
@@ -230,7 +232,7 @@ ipcMain.handle('settings:setEnterPastes', async (_e, value: boolean) => {
 // Khi đang ghi phím mới, tạm gỡ phím hiện tại để bấm lại chính nó không kích hoạt chụp.
 ipcMain.on('settings:recording', (_e, recording: boolean) => {
   if (recording) {
-    unregisterHotkey(config.hotkey);
+    if (hotkeyActive) globalShortcut.unregister(config.hotkey);
     hotkeyActive = false;
   } else if (!hotkeyActive) {
     hotkeyActive = registerHotkey(config.hotkey);
@@ -241,8 +243,6 @@ ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
   const res = await setHotkey(accel);
   return res.ok ? { ...res, pretty: prettyHotkey(res.hotkey) } : res;
 });
-
-ipcMain.handle('settings:pretty', (_e, accel: string) => prettyHotkey(accel));
 
 async function ensureMacPermission(): Promise<boolean> {
   if (!isMac) return true;
@@ -266,8 +266,8 @@ async function ensureMacPermission(): Promise<boolean> {
 }
 
 async function startCapture(): Promise<void> {
-  if (overlay) {
-    overlay.focus();
+  if (overlayOpen) {
+    overlay?.focus();
     return;
   }
   if (capturing) return;
@@ -275,25 +275,23 @@ async function startCapture(): Promise<void> {
   try {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = display.bounds;
-    const sf = display.scaleFactor;
 
-    // Gọi getSources trước: trên macOS lần đầu sẽ bật hộp thoại xin quyền của hệ thống.
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: Math.round(width * sf), height: Math.round(height * sf) },
-    });
-    if (!(await ensureMacPermission())) return;
-
-    const allIds = screen.getAllDisplays().map((d) => d.id);
-    const source =
-      sources.find((s) => s.display_id === String(display.id)) ??
-      sources[allIds.indexOf(display.id)] ??
-      sources[0];
-    if (!source || source.thumbnail.isEmpty()) {
-      dialog.showErrorBox('ShoreShot', 'Không chụp được màn hình.');
-      return;
+    if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      // Gọi getSources để macOS bật hộp thoại xin quyền lần đầu.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+      if (!(await ensureMacPermission())) return;
     }
-    openOverlay(display, { dataURL: source.thumbnail.toDataURL(), width, height });
+
+    let shot: Shot;
+    try {
+      shot = await grabNative(display);
+    } catch {
+      shot = await grabDesktopCapturer(display); // module native lỗi / không có binary cho máy này
+    }
+    if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
+      throw new Error(`bitmap ${shot.bitmap.length} B không khớp ${shot.pxW}×${shot.pxH}`);
+    }
+    await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes });
   } catch (err) {
     dialog.showErrorBox('ShoreShot', `Lỗi khi chụp: ${(err as Error).message}`);
   } finally {
@@ -301,13 +299,49 @@ async function startCapture(): Promise<void> {
   }
 }
 
-function openOverlay(display: Display, payload: CapturePayload): void {
+type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
+
+/**
+ * Chụp đúng 1 màn hình bằng node-screenshots (ra RGBA). desktopCapturer thì chụp mọi màn
+ * ở full độ phân giải dù chỉ dùng 1. require lúc chạy: thiếu binary cho máy này thì rơi về fallback, không sập app.
+ */
+async function grabNative(display: Display): Promise<Shot> {
+  const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
   const { x, y, width, height } = display.bounds;
+  // macOS: id trùng CGDirectDisplayID của Electron. Windows: id khác, tìm theo điểm giữa màn (toạ độ vật lý).
+  const center = { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
+  const p = isMac ? center : screen.dipToScreenPoint(center);
+  const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
+  if (!monitor) throw new Error('Không tìm thấy màn hình');
+  const img = await monitor.captureImage();
+  // Lệch kích thước = chọn nhầm màn: để fallback xử lý cho chắc.
+  const sf = display.scaleFactor;
+  if (Math.abs(img.width - width * sf) > 2 || Math.abs(img.height - height * sf) > 2) {
+    throw new Error(`Ảnh ${img.width}×${img.height} không khớp màn hình`);
+  }
+  return { bitmap: await img.toRaw(true), pxW: img.width, pxH: img.height, bgra: false };
+}
+
+async function grabDesktopCapturer(display: Display): Promise<Shot> {
+  const { width, height } = display.bounds;
+  const sf = display.scaleFactor;
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: Math.round(width * sf), height: Math.round(height * sf) },
+  });
+  const allIds = screen.getAllDisplays().map((d) => d.id);
+  const source =
+    sources.find((s) => s.display_id === String(display.id)) ??
+    sources[allIds.indexOf(display.id)] ??
+    sources[0];
+  if (!source || source.thumbnail.isEmpty()) throw new Error('Không chụp được màn hình.');
+  const { width: pxW, height: pxH } = source.thumbnail.getSize();
+  return { bitmap: source.thumbnail.toBitmap(), pxW, pxH, bgra: true };
+}
+
+function createOverlay(display: Display): BrowserWindow {
   const win = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
+    ...display.bounds,
     show: false,
     frame: false,
     resizable: false,
@@ -320,6 +354,7 @@ function openOverlay(display: Display, payload: CapturePayload): void {
     hasShadow: false,
     enableLargerThanScreen: true,
     backgroundColor: '#000000',
+    opacity: 0,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -327,60 +362,92 @@ function openOverlay(display: Display, payload: CapturePayload): void {
       sandbox: true,
     },
   });
-  overlay = win;
-  const id = win.webContents.id;
-  payloads.set(id, payload);
-
   win.setAlwaysOnTop(true, 'screen-saver');
   if (isMac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.setBounds(display.bounds);
-
-  // Chỉ hiện cửa sổ khi renderer đã vẽ xong ảnh để không bị chớp đen.
-  const fallback = setTimeout(() => showOverlay(win), 1500);
-  win.once('closed', () => {
-    clearTimeout(fallback);
-    payloads.delete(id);
-    if (overlay === win) overlay = null;
+  overlayScale = display.scaleFactor;
+  win.webContents.on('render-process-gone', () => win.destroy()); // lần chụp sau tạo lại
+  win.on('closed', () => {
+    if (overlay !== win) return;
+    overlay = null;
+    overlayOpen = false;
   });
   void win.loadFile(path.join(__dirname, '../static/editor.html'));
+  return win;
+}
+
+/**
+ * Dùng lại overlay đã tạo sẵn. Hiện cửa sổ ở opacity 0 (để renderer được vẽ), gửi ảnh,
+ * renderer vẽ xong báo 'capture:ready' thì mới cho hiện rõ: không chớp ảnh lần chụp trước.
+ */
+async function showCapture(display: Display, cap: CapturePayload): Promise<void> {
+  // Windows: setBounds sang màn hình khác scale lúc cửa sổ đang ẩn có thể ra sai kích thước,
+  // nên đổi scale thì tạo lại overlay ngay trên màn hình đó (chỉ tốn lần đầu đổi màn).
+  if (overlay && !overlay.isDestroyed() && overlayScale !== display.scaleFactor) overlay.destroy();
+  const win = overlay && !overlay.isDestroyed() ? overlay : (overlay = createOverlay(display));
+  if (win.webContents.isLoading()) {
+    const loaded = await new Promise<boolean>((r) => {
+      win.webContents.once('did-finish-load', () => r(true));
+      win.webContents.once('did-fail-load', () => r(false));
+    });
+    if (!loaded) {
+      win.destroy(); // lần sau tạo lại
+      throw new Error('Không tải được cửa sổ chụp.');
+    }
+  }
+  overlayOpen = true;
+  win.setOpacity(0);
+  win.setBounds(display.bounds);
+  showOverlay(win);
+  win.webContents.send('capture:show', cap);
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(() => reveal(win), 1500); // renderer không trả lời thì vẫn hiện
+}
+
+function reveal(win: BrowserWindow): void {
+  clearTimeout(revealTimer);
+  if (!win.isDestroyed()) win.setOpacity(1);
 }
 
 function showOverlay(win: BrowserWindow): void {
   if (win.isDestroyed() || win.isVisible()) return;
   win.show();
+  win.setAlwaysOnTop(true, 'screen-saver'); // đặt lại sau khi bị hide() lúc mở hộp thoại Save
   if (isMac) app.focus({ steal: true });
   win.focus();
 }
 
-function senderWindow(e: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow | null {
-  return BrowserWindow.fromWebContents(e.sender);
+/** Ẩn chứ không đóng, để lần chụp sau khỏi tạo lại cửa sổ. Renderer tự nhả bộ nhớ ảnh khi nhận 'capture:hidden'. */
+function hideOverlay(win: BrowserWindow | null): void {
+  overlayOpen = false;
+  if (!win || win.isDestroyed()) return;
+  clearTimeout(revealTimer);
+  win.setOpacity(0);
+  win.hide();
+  win.webContents.send('capture:hidden');
 }
 
-ipcMain.handle('capture:get', (e) => {
-  const p = payloads.get(e.sender.id);
-  return p ? { ...p, enterPastes: config.enterPastes } : null;
-});
+const toImage = (png: Uint8Array) => nativeImage.createFromBuffer(Buffer.from(png.buffer, png.byteOffset, png.byteLength));
 
 ipcMain.on('capture:ready', (e) => {
-  const win = senderWindow(e);
-  if (win) showOverlay(win);
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win) reveal(win);
 });
 
-ipcMain.on('capture:close', (e) => senderWindow(e)?.close());
+ipcMain.on('capture:close', (e) => hideOverlay(BrowserWindow.fromWebContents(e.sender)));
 
-ipcMain.handle('capture:copy', (e, dataURL: string) => {
-  clipboard.writeImage(nativeImage.createFromDataURL(dataURL));
-  senderWindow(e)?.close();
+ipcMain.handle('capture:copy', (e, png: Uint8Array) => {
+  clipboard.writeImage(toImage(png));
+  hideOverlay(BrowserWindow.fromWebContents(e.sender));
   return true;
 });
 
 // Copy rồi tự dán (⌘V / Ctrl+V) vào app đang dùng trước khi chụp.
-ipcMain.handle('capture:copyPaste', async (e, dataURL: string) => {
-  clipboard.writeImage(nativeImage.createFromDataURL(dataURL));
-  const win = senderWindow(e);
+ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
+  clipboard.writeImage(toImage(png));
+  const win = BrowserWindow.fromWebContents(e.sender);
 
   if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) {
-    win?.close();
+    hideOverlay(win);
     app.hide();
     systemPreferences.isTrustedAccessibilityClient(true); // bật hộp thoại xin quyền của macOS
     await dialog.showMessageBox({
@@ -393,53 +460,40 @@ ipcMain.handle('capture:copyPaste', async (e, dataURL: string) => {
     return false;
   }
 
-  win?.close();
-  // Trả focus về app trước đó. macOS: ẩn app; Windows: đóng overlay là cửa sổ trước tự lên lại.
+  hideOverlay(win);
+  // Trả focus về app trước đó. macOS: ẩn app; Windows: ẩn overlay là cửa sổ trước tự lên lại.
   if (isMac) app.hide();
   await sleep(isMac ? 250 : 150);
   try {
     await sendPasteKeystroke();
     return true;
   } catch (err) {
+    const { stderr, message } = err as { stderr?: string; message: string };
     dialog.showErrorBox(
       'ShoreShot',
-      `Ảnh đã copy nhưng không tự dán được: ${(err as Error).message}. Bấm ${isMac ? '⌘V' : 'Ctrl+V'} để dán.`,
+      `Ảnh đã copy nhưng không tự dán được: ${(stderr || message).trim()}. Bấm ${isMac ? '⌘V' : 'Ctrl+V'} để dán.`,
     );
     return false;
   }
 });
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function run(cmd: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, { windowsHide: true, timeout: 8000 }, (err, _out, stderr) =>
-      err ? reject(new Error(String(stderr || err.message).trim())) : resolve(),
-    );
-  });
-}
-
-function sendPasteKeystroke(): Promise<void> {
+function sendPasteKeystroke(): Promise<unknown> {
+  const opts = { windowsHide: true, timeout: 8000 };
   if (isMac) {
-    return run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+    return run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'], opts);
   }
-  if (process.platform === 'win32') {
-    return run('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
-    ]);
-  }
-  return run('xdotool', ['key', '--clearmodifiers', 'ctrl+v']); // Linux (nếu có xdotool)
+  return run('powershell.exe', [ // Windows (app chỉ build cho mac + win)
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
+  ], opts);
 }
 
-ipcMain.handle('capture:save', async (e, dataURL: string) => {
-  const win = senderWindow(e);
+ipcMain.handle('capture:save', async (e, png: Uint8Array) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
   // Ẩn overlay để hộp thoại Save không bị che.
   win?.hide();
   const { canceled, filePath } = await dialog.showSaveDialog({
@@ -448,25 +502,13 @@ ipcMain.handle('capture:save', async (e, dataURL: string) => {
     filters: [{ name: 'PNG', extensions: ['png'] }],
   });
   if (canceled || !filePath) {
-    if (win) showOverlayAgain(win);
+    if (win) showOverlay(win);
     return false;
   }
-  const base64 = dataURL.replace(/^data:image\/png;base64,/, '');
-  await fs.writeFile(filePath, Buffer.from(base64, 'base64'));
-  win?.close();
+  await fs.writeFile(filePath, png);
+  hideOverlay(win);
   return true;
 });
 
-function showOverlayAgain(win: BrowserWindow): void {
-  if (win.isDestroyed()) return;
-  win.show();
-  win.setAlwaysOnTop(true, 'screen-saver');
-  if (isMac) app.focus({ steal: true });
-  win.focus();
-}
-
-function timestamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
-}
+// sv-SE cho dạng "YYYY-MM-DD HH:MM:SS"; đổi ":" vì Windows cấm trong tên file.
+const timestamp = () => new Date().toLocaleString('sv-SE').replace(/:/g, '.');

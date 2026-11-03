@@ -33,6 +33,9 @@ jobs:
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
+      # node-screenshots chỉ cài binary đúng kiến trúc máy build (runner mac là arm64): thêm bản x64 cho file Intel.
+      - if: runner.os == 'macOS'
+        run: npm install --no-save --no-audit --no-fund --force "node-screenshots-darwin-x64@$(node -p "require('node-screenshots/package.json').version")"
       - run: npm run build
       - run: npx electron-builder ${{ matrix.target }} --publish never
         shell: bash

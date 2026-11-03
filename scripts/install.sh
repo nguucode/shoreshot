@@ -4,7 +4,6 @@
 #   curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash
 #
 # Tuỳ chọn (truyền sau `bash -s --`):
-#   --from-source   bỏ qua bản build sẵn, build từ source (cần git + Node.js 18+)
 #   --uninstall     gỡ ShoreShot
 #   --no-launch     cài xong không mở app
 set -euo pipefail
@@ -13,15 +12,13 @@ REPO="nguucode/shoreshot"
 APP_NAME="ShoreShot"
 BUNDLE_ID="biz.ontheshore.shoreshot"
 
-FROM_SOURCE=0
 UNINSTALL=0
 LAUNCH=1
 for arg in "$@"; do
   case "$arg" in
-    --from-source) FROM_SOURCE=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --no-launch) LAUNCH=0 ;;
-    -h|--help) sed -n '2,10p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "Tuỳ chọn không hợp lệ: $arg" >&2; exit 1 ;;
   esac
 done
@@ -75,32 +72,7 @@ download_release() {
   [ -n "$APP_SRC" ]
 }
 
-build_from_source() {
-  say "Build từ source…"
-  command -v git >/dev/null || die "Cần git. Cài: xcode-select --install"
-  command -v node >/dev/null || die "Cần Node.js 18+. Cài: https://nodejs.org hoặc 'brew install node'"
-  local major
-  major="$(node -p 'process.versions.node.split(".")[0]')"
-  [ "$major" -ge 18 ] || die "Node.js $major quá cũ, cần 18+."
-
-  git clone --depth 1 "https://github.com/$REPO.git" "$TMP/src" >/dev/null 2>&1 || die "Không clone được repo."
-  cd "$TMP/src"
-  say "npm install (lần đầu mất 1 đến 3 phút)…"
-  npm install --no-audit --no-fund --loglevel=error
-  npm run build --silent
-  say "Đóng gói app…"
-  CSC_IDENTITY_AUTO_DISCOVERY=false npx --no-install electron-builder --mac --dir --"$ARCH" >/dev/null
-  APP_SRC="$(find "$TMP/src/release" -maxdepth 2 -name "$APP_NAME.app" -type d | head -n1)"
-  [ -n "$APP_SRC" ] || die "Build xong nhưng không thấy $APP_NAME.app."
-  cd - >/dev/null
-}
-
-if [ "$FROM_SOURCE" = 1 ]; then
-  build_from_source
-elif ! download_release; then
-  say "Chưa có bản build sẵn cho mac-$ARCH, chuyển sang build từ source."
-  build_from_source
-fi
+download_release || die "Chưa có bản build sẵn cho mac-$ARCH. Xem https://github.com/$REPO/releases"
 
 say "Cài vào $DEST…"
 mkdir -p "$DEST_DIR"
