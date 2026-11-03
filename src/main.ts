@@ -28,10 +28,29 @@ const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const BUNDLE_ID = 'biz.ontheshore.shoreshot'; // build.appId in package.json
 const REPO_URL = 'https://github.com/nguucode/shoreshot';
 const UPDATE_CHECK_MS = 12 * 60 * 60 * 1000;
-// SHORESHOT_TIMING=1: log how long each capture stage takes (run the binary from a terminal).
-const TIMING = !!process.env.SHORESHOT_TIMING;
+// Every capture appends one line of step timings (ms since the hotkey) to
+// ~/Library/Logs/ShoreShot/capture.log (Windows: %APPDATA%\ShoreShot\logs), so slowness can be checked
+// without a special launch. The file is emptied at startup once it passes 256 KB.
 let captureT0 = 0;
-const mark = (stage: string) => TIMING && console.log(`[timing] ${stage}: ${Math.round(performance.now() - captureT0)} ms`);
+let marks: string[] = [];
+const mark = (step: string) => marks.push(`${step} ${Math.round(performance.now() - captureT0)}`);
+const captureLog = () => path.join(app.getPath('logs'), 'capture.log');
+
+function flushMarks(): void {
+  if (!marks.length) return;
+  const line = `${new Date().toISOString()}  ${marks.join(' · ')}\n`;
+  marks = [];
+  void fs.appendFile(captureLog(), line).catch(() => undefined);
+}
+
+async function prepareCaptureLog(): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(captureLog()), { recursive: true });
+    if ((await fs.stat(captureLog())).size > 256 * 1024) await fs.writeFile(captureLog(), '');
+  } catch {
+    /* no log yet */
+  }
+}
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
@@ -71,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
 app.whenReady().then(async () => {
   if (isMac) app.dock?.hide();
   config = await loadConfig();
+  void prepareCaptureLog();
   hotkeyActive = registerHotkey(config.hotkey);
   createTray();
   overlay = createOverlay(screen.getPrimaryDisplay()); // created up front so the hotkey shows it instantly
@@ -382,7 +402,7 @@ async function startCapture(): Promise<void> {
     mark('display');
 
     if (!(await ensureMacPermission())) return;
-    mark('permission check');
+    mark('permission');
 
     let shot: Shot;
     try {
@@ -390,7 +410,7 @@ async function startCapture(): Promise<void> {
     } catch {
       shot = await grabDesktopCapturer(display); // native module failed / no binary for this machine
     }
-    mark(`captured ${shot.pxW}×${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
+    mark(`captured ${shot.pxW}x${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
     if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
       throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
     }
@@ -404,6 +424,8 @@ async function startCapture(): Promise<void> {
     dialog.showErrorBox('ShoreShot', `Capture failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     capturing = false;
+    if (!overlayOpen) flushMarks(); // nothing shown (no permission / error): log what we have
+
   }
 }
 
@@ -415,22 +437,27 @@ type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
  */
 async function grabNative(display: Display): Promise<Shot> {
   const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
-  mark('  load node-screenshots');
+  mark('module');
   const { x, y, width, height } = display.bounds;
   // macOS: id equals Electron's CGDirectDisplayID. Windows: ids differ, so look up by the display's center (physical coordinates).
   const center = { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
   const p = isMac ? center : screen.dipToScreenPoint(center);
   const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
   if (!monitor) throw new Error('Display not found');
-  mark('  find monitor');
-  const img = await monitor.captureImage();
-  mark('  captureImage');
+  mark('monitor');
+  // Synchronous on purpose: the async captureImage runs on the libuv threadpool, and in normal use
+  // that work sometimes started 0.8-4 s late (hotkey to capture). Blocking the main thread for
+  // ~110 ms is fine here, the overlay isn't shown yet.
+  const img = monitor.captureImageSync();
+  mark('capture');
   // Size mismatch = wrong display: let the fallback handle it.
   const sf = display.scaleFactor;
   if (Math.abs(img.width - width * sf) > 2 || Math.abs(img.height - height * sf) > 2) {
     throw new Error(`Image ${img.width}×${img.height} does not match the display`);
   }
-  return { bitmap: await img.toRaw(true), pxW: img.width, pxH: img.height, bgra: false };
+  const bitmap = img.toRawSync(true);
+  mark('pixels');
+  return { bitmap, pxW: img.width, pxH: img.height, bgra: false };
 }
 
 async function grabDesktopCapturer(display: Display): Promise<Shot> {
@@ -514,7 +541,7 @@ async function showCapture(display: Display, cap: CapturePayload): Promise<void>
   win.setBounds(display.bounds);
   showOverlay(win);
   win.webContents.send('capture:show', cap);
-  mark('sent to overlay');
+  mark('sent');
   clearTimeout(revealTimer);
   revealTimer = setTimeout(() => reveal(win), 1500); // show anyway if the renderer never answers
 }
@@ -522,6 +549,8 @@ async function showCapture(display: Display, cap: CapturePayload): Promise<void>
 function reveal(win: BrowserWindow): void {
   clearTimeout(revealTimer);
   if (!win.isDestroyed()) win.setOpacity(1);
+  mark('visible');
+  flushMarks();
 }
 
 function showOverlay(win: BrowserWindow): void {
@@ -547,7 +576,6 @@ const toImage = (png: Uint8Array) => nativeImage.createFromBuffer(Buffer.from(pn
 ipcMain.on('capture:ready', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win) reveal(win);
-  mark('visible');
 });
 
 ipcMain.on('capture:close', (e) => hideOverlay(BrowserWindow.fromWebContents(e.sender)));
