@@ -2,18 +2,18 @@
 #
 #   irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 #
-# Tuỳ chọn: tải script về rồi chạy với tham số
+# Options: download the script and run it with parameters
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -Uninstall
 #
-#   -Uninstall    gỡ ShoreShot
-#   -NoLaunch     cài xong không mở app
+#   -Uninstall    remove ShoreShot
+#   -NoLaunch     don't open the app after installing
 param(
   [switch]$Uninstall,
   [switch]$NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest nhanh hơn nhiều khi tắt progress bar
+$ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is much faster without the progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'nguucode/shoreshot'
@@ -43,18 +43,18 @@ function Find-Uninstaller {
 }
 
 if ($Uninstall) {
-  Say "Gỡ $AppName..."
+  Say "Removing $AppName..."
   Stop-App
   $u = Find-Uninstaller
   if ($u) {
     $exe = ($u.UninstallString -replace '^"([^"]+)".*$', '$1')
     Start-Process -FilePath $exe -ArgumentList '/S' -Wait
-    Ok 'Đã chạy trình gỡ cài đặt.'
+    Ok 'Ran the uninstaller.'
   }
   foreach ($p in @($InstallDir, $StartMenuLnk, $DesktopLnk, (Join-Path $env:APPDATA $AppName))) {
-    if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "Đã xoá $p" }
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "Removed $p" }
   }
-  Ok 'Gỡ xong.'
+  Ok 'Uninstalled.'
   return
 }
 
@@ -62,24 +62,24 @@ $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("shoreshot-" + [Guid]::NewGuid())
 New-Item -ItemType Directory -Path $Tmp | Out-Null
 
 function Install-FromRelease {
-  Say 'Tìm bản build sẵn mới nhất trên GitHub Releases...'
+  Say 'Looking up the latest build on GitHub Releases...'
   try {
     $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'shoreshot-installer' }
   } catch { return $false }
   $asset = $rel.assets | Where-Object { $_.name -like "$AppName-Setup-*.exe" } | Select-Object -First 1
   if (-not $asset) { return $false }
   $setup = Join-Path $Tmp $asset.name
-  Say "Tải $($asset.name)..."
+  Say "Downloading $($asset.name)..."
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $setup -UseBasicParsing
   Stop-App
-  Say 'Cài đặt (silent)...'
-  # /S: cài im lặng, /currentuser: không cần quyền Admin.
+  Say 'Installing (silent)...'
+  # /S: silent install, /currentuser: no Admin rights needed.
   Start-Process -FilePath $setup -ArgumentList '/S', '/currentuser' -Wait
   return $true
 }
 
 try {
-  if (-not (Install-FromRelease)) { Die "Chưa có bản build sẵn cho Windows. Xem https://github.com/$Repo/releases" }
+  if (-not (Install-FromRelease)) { Die "No Windows build yet. See https://github.com/$Repo/releases" }
 
   $exe = Join-Path $InstallDir "$AppName.exe"
   if (-not (Test-Path $exe)) {
@@ -87,11 +87,11 @@ try {
     if ($u -and $u.InstallLocation) { $exe = Join-Path $u.InstallLocation "$AppName.exe" }
   }
 
-  Ok "Đã cài $AppName"
+  Ok "Installed $AppName"
   Write-Host ''
-  Write-Host '  - Phím tắt mặc định: Ctrl+Shift+X (đổi ở icon khay hệ thống > Đổi phím tắt...)'
-  Write-Host '  - Ctrl+C copy, Ctrl+V copy và tự dán vào app trước đó.'
-  Write-Host "  - Gỡ: & ([scriptblock]::Create((irm https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1))) -Uninstall"
+  Write-Host '  - Default hotkey: Ctrl+Shift+X (change it from the tray icon > Change hotkey...)'
+  Write-Host '  - Ctrl+C copies, Ctrl+V copies and pastes into the previous app.'
+  Write-Host "  - Uninstall: & ([scriptblock]::Create((irm https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1))) -Uninstall"
   Write-Host ''
 
   if (-not $NoLaunch -and (Test-Path $exe)) { Start-Process $exe }

@@ -3,9 +3,9 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash
 #
-# Tuỳ chọn (truyền sau `bash -s --`):
-#   --uninstall     gỡ ShoreShot
-#   --no-launch     cài xong không mở app
+# Options (pass after `bash -s --`):
+#   --uninstall     remove ShoreShot
+#   --no-launch     don't open the app after installing
 set -euo pipefail
 
 REPO="nguucode/shoreshot"
@@ -19,7 +19,7 @@ for arg in "$@"; do
     --uninstall) UNINSTALL=1 ;;
     --no-launch) LAUNCH=0 ;;
     -h|--help) sed -n '2,8p' "$0" 2>/dev/null || true; exit 0 ;;
-    *) echo "Tuỳ chọn không hợp lệ: $arg" >&2; exit 1 ;;
+    *) echo "Unknown option: $arg" >&2; exit 1 ;;
   esac
 done
 
@@ -27,9 +27,9 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Darwin" ] || die "Script này dành cho macOS. Windows dùng scripts/install.ps1."
+[ "$(uname -s)" = "Darwin" ] || die "This script is for macOS. On Windows use scripts/install.ps1."
 
-# Cài vào /Applications nếu ghi được, không thì ~/Applications (không cần sudo).
+# Install into /Applications when writable, otherwise ~/Applications (no sudo needed).
 if [ -w /Applications ]; then DEST_DIR="/Applications"; else DEST_DIR="$HOME/Applications"; fi
 DEST="$DEST_DIR/$APP_NAME.app"
 
@@ -40,13 +40,13 @@ quit_app() {
 }
 
 if [ "$UNINSTALL" = 1 ]; then
-  say "Gỡ ${APP_NAME}…"
+  say "Removing ${APP_NAME}..."
   quit_app
   for d in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
-    [ -d "$d" ] && rm -rf "$d" && ok "Đã xoá $d"
+    [ -d "$d" ] && rm -rf "$d" && ok "Removed $d"
   done
   rm -rf "$HOME/Library/Application Support/$APP_NAME"
-  ok "Đã gỡ xong. (Quyền Screen Recording / Accessibility có thể xoá tay trong System Settings.)"
+  ok "Uninstalled. (Screen Recording / Accessibility permissions can be removed in System Settings.)"
   exit 0
 fi
 
@@ -59,37 +59,37 @@ trap 'rm -rf "$TMP"' EXIT
 APP_SRC=""
 
 download_release() {
-  say "Tìm bản build sẵn mới nhất trên GitHub Releases…"
+  say "Looking up the latest build on GitHub Releases..."
   local api="https://api.github.com/repos/$REPO/releases/latest"
   local json url
   json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null)" || return 1
   url="$(printf '%s' "$json" | grep -o '"browser_download_url": *"[^"]*-mac-'"$ARCH"'\.zip"' | head -n1 | sed 's/.*"\(https[^"]*\)"/\1/')"
   [ -n "$url" ] || return 1
-  say "Tải $(basename "$url")…"
+  say "Downloading $(basename "$url")..."
   curl -fL --progress-bar "$url" -o "$TMP/app.zip" || return 1
   ditto -x -k "$TMP/app.zip" "$TMP/unzipped" || return 1
   APP_SRC="$(find "$TMP/unzipped" -maxdepth 2 -name "$APP_NAME.app" -type d | head -n1)"
   [ -n "$APP_SRC" ]
 }
 
-download_release || die "Chưa có bản build sẵn cho mac-$ARCH. Xem https://github.com/$REPO/releases"
+download_release || die "No build for mac-$ARCH yet. See https://github.com/$REPO/releases"
 
-say "Cài vào ${DEST}…"
+say "Installing to ${DEST}..."
 mkdir -p "$DEST_DIR"
 quit_app
 rm -rf "$DEST"
 ditto "$APP_SRC" "$DEST"
 
-# App chưa ký bằng Apple Developer ID: bỏ cờ quarantine và ký ad-hoc để macOS (nhất là Apple Silicon) cho chạy.
+# The app isn't signed with an Apple Developer ID: drop the quarantine flag and sign ad-hoc so macOS (especially Apple Silicon) runs it.
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 codesign --force --deep --sign - "$DEST" >/dev/null 2>&1 || true
 
-ok "Đã cài $APP_NAME vào $DEST"
+ok "Installed $APP_NAME to $DEST"
 echo
-echo "  • Phím tắt mặc định: ⌘⇧X (đổi trong icon menu bar > Đổi phím tắt…)"
-echo "  • Lần chụp đầu, cấp quyền Screen Recording rồi mở lại app."
-echo "  • Muốn ⌘V tự dán vào app khác: cấp thêm quyền Accessibility."
-echo "  • Gỡ: curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | bash -s -- --uninstall"
+echo "  • Default hotkey: ⌘⇧X (change it from the menu bar icon > Change hotkey...)"
+echo "  • On the first capture, allow Screen Recording, then reopen the app."
+echo "  • For ⌘V to paste into other apps, also allow Accessibility."
+echo "  • Uninstall: curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | bash -s -- --uninstall"
 echo
 
 if [ "$LAUNCH" = 1 ]; then

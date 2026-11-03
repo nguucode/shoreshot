@@ -26,20 +26,20 @@ const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
-  bitmap: Buffer; // pixel thô, full độ phân giải thật: khỏi encode/decode PNG
+  bitmap: Buffer; // raw pixels at full native resolution: no PNG encode/decode
   bgra: boolean; // desktopCapturer ra BGRA, node-screenshots ra RGBA
   pxW: number;
   pxH: number;
-  width: number; // kích thước màn hình theo CSS px (DIP)
+  width: number; // display size in CSS px (DIP)
   height: number;
   enterPastes: boolean;
 }
 
 interface Config {
   hotkey: string;
-  /** true: Enter / nút ✓ sẽ copy rồi tự dán vào app trước đó. */
+  /** true: Enter / the ✓ button copies, then pastes into the previous app. */
   enterPastes: boolean;
-  /** macOS đã tự hỏi quyền Screen Recording chưa (macOS chỉ hỏi 1 lần). */
+  /** Whether macOS has already shown its Screen Recording prompt (it only asks once). */
   screenAsked: boolean;
 }
 
@@ -49,10 +49,10 @@ let settingsWin: BrowserWindow | null = null;
 let capturing = false;
 const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false, screenAsked: false };
 let config: Config = { ...DEFAULT_CONFIG };
-let hotkeyActive = false; // phím tắt hiện có đang đăng ký thành công không
+let hotkeyActive = false; // whether the current hotkey is registered
 let revealTimer: NodeJS.Timeout | undefined;
-let overlayScale = 1; // scaleFactor của màn hình lúc tạo overlay
-let overlayOpen = false; // đang có ảnh chụp dở (kể cả lúc overlay tạm ẩn cho hộp thoại Save)
+let overlayScale = 1; // scaleFactor of the display the overlay was created on
+let overlayOpen = false; // a capture is in progress (including while the overlay is hidden for the Save dialog)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -63,14 +63,14 @@ app.whenReady().then(async () => {
   config = await loadConfig();
   hotkeyActive = registerHotkey(config.hotkey);
   createTray();
-  overlay = createOverlay(screen.getPrimaryDisplay()); // tạo sẵn để bấm phím tắt là hiện ngay
+  overlay = createOverlay(screen.getPrimaryDisplay()); // created up front so the hotkey shows it instantly
   if (!hotkeyActive) {
-    // Phím tắt đã lưu bị app khác chiếm: mở Cài đặt để người dùng chọn phím khác.
+    // The saved hotkey is taken by another app: open Settings so the user can pick another.
     openSettings();
   }
 });
 
-// Giữ app chạy nền khi đóng overlay / cài đặt.
+// Keep running in the background when the overlay / Settings close.
 app.on('window-all-closed', () => {});
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('second-instance', () => void startCapture());
@@ -101,7 +101,7 @@ function registerHotkey(accel: string): boolean {
   try {
     return globalShortcut.register(accel, () => void startCapture());
   } catch {
-    return false; // accelerator sai cú pháp
+    return false; // invalid accelerator syntax
   }
 }
 
@@ -110,13 +110,13 @@ type SetHotkeyResult = { ok: true; hotkey: string } | { ok: false; error: string
 async function setHotkey(accel: string): Promise<SetHotkeyResult> {
   const old = config.hotkey;
   if (accel === old && hotkeyActive) return { ok: true, hotkey: old };
-  // Chỉ gỡ khi đang đăng ký: phím trong config sửa tay có thể sai cú pháp, unregister sẽ throw.
+  // Only unregister when registered: a hand-edited config may hold an invalid accelerator and unregister would throw.
   if (hotkeyActive) globalShortcut.unregister(old);
   if (!registerHotkey(accel)) {
-    hotkeyActive = registerHotkey(old); // trả lại phím cũ
+    hotkeyActive = registerHotkey(old); // restore the old hotkey
     return {
       ok: false,
-      error: `${prettyHotkey(accel)} đang bị hệ thống hoặc app khác dùng. Chọn tổ hợp khác.`,
+      error: `${prettyHotkey(accel)} is already used by the system or another app. Pick another combination.`,
     };
   }
   hotkeyActive = true;
@@ -126,7 +126,7 @@ async function setHotkey(accel: string): Promise<SetHotkeyResult> {
   return { ok: true, hotkey: accel };
 }
 
-/** Hiển thị accelerator theo kiểu từng OS: ⌘⇧X trên Mac, Ctrl+Shift+X trên Windows. */
+/** Show an accelerator the way each OS does: ⌘⇧X on Mac, Ctrl+Shift+X on Windows. */
 function prettyHotkey(accel: string = config.hotkey): string {
   const mac: Record<string, string> = {
     CommandOrControl: '⌘', CmdOrCtrl: '⌘', Command: '⌘', Cmd: '⌘', Super: '⌘', Meta: '⌘',
@@ -148,22 +148,22 @@ function createTray(): void {
   if (isMac) icon.setTemplateImage(true);
   tray = new Tray(icon);
   refreshTray();
-  // Windows: click trái vào icon khay là chụp luôn.
+  // Windows: left-clicking the tray icon captures right away.
   if (!isMac) tray.on('click', () => void startCapture());
 }
 
 function refreshTray(): void {
   if (!tray) return;
-  const keyLabel = hotkeyActive ? prettyHotkey() : 'chưa gán';
+  const keyLabel = hotkeyActive ? prettyHotkey() : 'not set';
   tray.setToolTip(`ShoreShot (${keyLabel})`);
   const login = app.getLoginItemSettings().openAtLogin;
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Chụp màn hình    ${keyLabel}`, click: () => void startCapture() },
-      { label: 'Đổi phím tắt…', click: () => openSettings() },
+      { label: `Capture screen    ${keyLabel}`, click: () => void startCapture() },
+      { label: 'Change hotkey…', click: () => openSettings() },
       { type: 'separator' },
       {
-        label: 'Khởi động cùng máy',
+        label: 'Open at login',
         type: 'checkbox',
         checked: login,
         click: (item) => {
@@ -172,7 +172,7 @@ function refreshTray(): void {
         },
       },
       { type: 'separator' },
-      { label: 'Thoát ShoreShot', role: 'quit' },
+      { label: 'Quit ShoreShot', role: 'quit' },
     ]),
   );
 }
@@ -192,7 +192,7 @@ function openSettings(): void {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    title: 'ShoreShot · Cài đặt',
+    title: 'ShoreShot Settings',
     useContentSize: true,
     backgroundColor: '#1c1c1e',
     webPreferences: {
@@ -211,7 +211,7 @@ function openSettings(): void {
   });
   win.on('closed', () => {
     settingsWin = null;
-    // Lỡ đóng cửa sổ khi đang ghi phím: đăng ký lại phím hiện tại.
+    // Window closed while recording a hotkey: re-register the current one.
     if (!hotkeyActive) hotkeyActive = registerHotkey(config.hotkey);
     refreshTray();
   });
@@ -233,7 +233,7 @@ ipcMain.handle('settings:setEnterPastes', async (_e, value: boolean) => {
   return config.enterPastes;
 });
 
-// Khi đang ghi phím mới, tạm gỡ phím hiện tại để bấm lại chính nó không kích hoạt chụp.
+// While recording a new hotkey, unregister the current one so pressing it doesn't start a capture.
 ipcMain.on('settings:recording', (_e, recording: boolean) => {
   if (recording) {
     if (hotkeyActive) globalShortcut.unregister(config.hotkey);
@@ -249,26 +249,26 @@ ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
 });
 
 /**
- * macOS: chưa có quyền Screen Recording thì xin quyền, không báo lỗi.
- * Lần đầu để macOS tự hỏi (hộp thoại hệ thống có sẵn nút mở System Settings). macOS chỉ hỏi
- * 1 lần, nên từ lần sau app tự mở hộp thoại hướng dẫn bật quyền.
+ * macOS: without Screen Recording permission, ask for it instead of showing an error.
+ * The first time, let macOS ask (its prompt has a button to open System Settings). macOS only
+ * asks once, so after that the app shows its own dialog explaining how to turn it on.
  */
 async function ensureMacPermission(): Promise<boolean> {
   if (!isMac || systemPreferences.getMediaAccessStatus('screen') === 'granted') return true;
   if (!config.screenAsked) {
     config.screenAsked = true;
     await saveConfig();
-    // Thử chụp để macOS bật hộp thoại xin quyền. Chưa có quyền thì lệnh này lỗi: bỏ qua.
+    // Try a capture so macOS shows its prompt. Without permission this call fails: ignore it.
     await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
     return false;
   }
   const { response } = await dialog.showMessageBox({
     type: 'info',
-    title: 'ShoreShot cần quyền ghi màn hình',
-    message: 'Cho phép ShoreShot ghi màn hình để chụp ảnh',
+    title: 'ShoreShot needs Screen Recording permission',
+    message: 'Allow ShoreShot to record the screen to take screenshots',
     detail:
-      'Mở System Settings > Privacy & Security > Screen & System Audio Recording, bật ShoreShot. macOS sẽ hỏi mở lại app, chọn "Quit & Reopen" rồi bấm phím tắt chụp lại.',
-    buttons: ['Mở System Settings', 'Để sau'],
+      'Open System Settings > Privacy & Security > Screen & System Audio Recording and turn on ShoreShot. When macOS asks to reopen the app, choose "Quit & Reopen", then press the hotkey again.',
+    buttons: ['Open System Settings', 'Later'],
     defaultId: 0,
     cancelId: 1,
   });
@@ -297,19 +297,19 @@ async function startCapture(): Promise<void> {
     try {
       shot = await grabNative(display);
     } catch {
-      shot = await grabDesktopCapturer(display); // module native lỗi / không có binary cho máy này
+      shot = await grabDesktopCapturer(display); // native module failed / no binary for this machine
     }
     if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
-      throw new Error(`bitmap ${shot.bitmap.length} B không khớp ${shot.pxW}×${shot.pxH}`);
+      throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
     }
     await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes });
   } catch (err) {
-    // Quyền bị tắt giữa chừng: hướng dẫn bật lại thay vì báo lỗi.
+    // Permission was turned off mid-run: explain how to turn it back on instead of erroring.
     if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
       await ensureMacPermission();
       return;
     }
-    dialog.showErrorBox('ShoreShot', `Lỗi khi chụp: ${err instanceof Error ? err.message : String(err)}`);
+    dialog.showErrorBox('ShoreShot', `Capture failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     capturing = false;
   }
@@ -318,22 +318,22 @@ async function startCapture(): Promise<void> {
 type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
 
 /**
- * Chụp đúng 1 màn hình bằng node-screenshots (ra RGBA). desktopCapturer thì chụp mọi màn
- * ở full độ phân giải dù chỉ dùng 1. require lúc chạy: thiếu binary cho máy này thì rơi về fallback, không sập app.
+ * Capture just one display with node-screenshots (RGBA output). desktopCapturer renders every display
+ * at full resolution even though one is used. Required at runtime: a missing binary falls back instead of crashing the app.
  */
 async function grabNative(display: Display): Promise<Shot> {
   const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
   const { x, y, width, height } = display.bounds;
-  // macOS: id trùng CGDirectDisplayID của Electron. Windows: id khác, tìm theo điểm giữa màn (toạ độ vật lý).
+  // macOS: id equals Electron's CGDirectDisplayID. Windows: ids differ, so look up by the display's center (physical coordinates).
   const center = { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
   const p = isMac ? center : screen.dipToScreenPoint(center);
   const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
-  if (!monitor) throw new Error('Không tìm thấy màn hình');
+  if (!monitor) throw new Error('Display not found');
   const img = await monitor.captureImage();
-  // Lệch kích thước = chọn nhầm màn: để fallback xử lý cho chắc.
+  // Size mismatch = wrong display: let the fallback handle it.
   const sf = display.scaleFactor;
   if (Math.abs(img.width - width * sf) > 2 || Math.abs(img.height - height * sf) > 2) {
-    throw new Error(`Ảnh ${img.width}×${img.height} không khớp màn hình`);
+    throw new Error(`Image ${img.width}×${img.height} does not match the display`);
   }
   return { bitmap: await img.toRaw(true), pxW: img.width, pxH: img.height, bgra: false };
 }
@@ -350,7 +350,7 @@ async function grabDesktopCapturer(display: Display): Promise<Shot> {
     sources.find((s) => s.display_id === String(display.id)) ??
     sources[allIds.indexOf(display.id)] ??
     sources[0];
-  if (!source || source.thumbnail.isEmpty()) throw new Error('Không chụp được màn hình.');
+  if (!source || source.thumbnail.isEmpty()) throw new Error('Could not capture the screen.');
   const { width: pxW, height: pxH } = source.thumbnail.getSize();
   return { bitmap: source.thumbnail.toBitmap(), pxW, pxH, bgra: true };
 }
@@ -381,7 +381,7 @@ function createOverlay(display: Display): BrowserWindow {
   win.setAlwaysOnTop(true, 'screen-saver');
   if (isMac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayScale = display.scaleFactor;
-  win.webContents.on('render-process-gone', () => win.destroy()); // lần chụp sau tạo lại
+  win.webContents.on('render-process-gone', () => win.destroy()); // recreated on the next capture
   win.on('closed', () => {
     if (overlay !== win) return;
     overlay = null;
@@ -392,12 +392,12 @@ function createOverlay(display: Display): BrowserWindow {
 }
 
 /**
- * Dùng lại overlay đã tạo sẵn. Hiện cửa sổ ở opacity 0 (để renderer được vẽ), gửi ảnh,
- * renderer vẽ xong báo 'capture:ready' thì mới cho hiện rõ: không chớp ảnh lần chụp trước.
+ * Reuse the preloaded overlay. Show it at opacity 0 (so the renderer can paint), send the image,
+ * and only make it visible once the renderer reports 'capture:ready': no flash of the previous capture.
  */
 async function showCapture(display: Display, cap: CapturePayload): Promise<void> {
-  // Windows: setBounds sang màn hình khác scale lúc cửa sổ đang ẩn có thể ra sai kích thước,
-  // nên đổi scale thì tạo lại overlay ngay trên màn hình đó (chỉ tốn lần đầu đổi màn).
+  // Windows: setBounds onto a display with another scale while hidden can size the window wrongly,
+  // so on a scale change recreate the overlay on that display (costs only the first switch).
   if (overlay && !overlay.isDestroyed() && overlayScale !== display.scaleFactor) overlay.destroy();
   const win = overlay && !overlay.isDestroyed() ? overlay : (overlay = createOverlay(display));
   if (win.webContents.isLoading()) {
@@ -406,8 +406,8 @@ async function showCapture(display: Display, cap: CapturePayload): Promise<void>
       win.webContents.once('did-fail-load', () => r(false));
     });
     if (!loaded) {
-      win.destroy(); // lần sau tạo lại
-      throw new Error('Không tải được cửa sổ chụp.');
+      win.destroy(); // recreated next time
+      throw new Error('Could not load the capture window.');
     }
   }
   overlayOpen = true;
@@ -416,7 +416,7 @@ async function showCapture(display: Display, cap: CapturePayload): Promise<void>
   showOverlay(win);
   win.webContents.send('capture:show', cap);
   clearTimeout(revealTimer);
-  revealTimer = setTimeout(() => reveal(win), 1500); // renderer không trả lời thì vẫn hiện
+  revealTimer = setTimeout(() => reveal(win), 1500); // show anyway if the renderer never answers
 }
 
 function reveal(win: BrowserWindow): void {
@@ -427,12 +427,12 @@ function reveal(win: BrowserWindow): void {
 function showOverlay(win: BrowserWindow): void {
   if (win.isDestroyed() || win.isVisible()) return;
   win.show();
-  win.setAlwaysOnTop(true, 'screen-saver'); // đặt lại sau khi bị hide() lúc mở hộp thoại Save
+  win.setAlwaysOnTop(true, 'screen-saver'); // reapply after hide() for the Save dialog
   if (isMac) app.focus({ steal: true });
   win.focus();
 }
 
-/** Ẩn chứ không đóng, để lần chụp sau khỏi tạo lại cửa sổ. Renderer tự nhả bộ nhớ ảnh khi nhận 'capture:hidden'. */
+/** Hide instead of close so the next capture skips window creation. The renderer frees the image on 'capture:hidden'. */
 function hideOverlay(win: BrowserWindow | null): void {
   overlayOpen = false;
   if (!win || win.isDestroyed()) return;
@@ -457,7 +457,7 @@ ipcMain.handle('capture:copy', (e, png: Uint8Array) => {
   return true;
 });
 
-// Copy rồi tự dán (⌘V / Ctrl+V) vào app đang dùng trước khi chụp.
+// Copy, then auto-paste (⌘V / Ctrl+V) into the app that was active before the capture.
 ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
   clipboard.writeImage(toImage(png));
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -465,19 +465,19 @@ ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
   if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) {
     hideOverlay(win);
     app.hide();
-    systemPreferences.isTrustedAccessibilityClient(true); // bật hộp thoại xin quyền của macOS
+    systemPreferences.isTrustedAccessibilityClient(true); // shows the macOS permission prompt
     await dialog.showMessageBox({
       type: 'info',
       title: 'ShoreShot',
-      message: 'Ảnh đã được copy, nhưng chưa tự dán được',
+      message: 'Image copied, but it could not be pasted automatically',
       detail:
-        'Để tự dán, cấp quyền cho ShoreShot ở System Settings > Privacy & Security > Accessibility, rồi mở lại app. Lần này sếp bấm ⌘V để dán.',
+        'To auto-paste, allow ShoreShot in System Settings > Privacy & Security > Accessibility, then reopen the app. For now, press ⌘V to paste.',
     });
     return false;
   }
 
   hideOverlay(win);
-  // Trả focus về app trước đó. macOS: ẩn app; Windows: ẩn overlay là cửa sổ trước tự lên lại.
+  // Give focus back to the previous app. macOS: hide the app; Windows: hiding the overlay brings the previous window back.
   if (isMac) app.hide();
   await sleep(isMac ? 250 : 150);
   try {
@@ -487,7 +487,7 @@ ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
     const { stderr, message } = err as { stderr?: string; message: string };
     dialog.showErrorBox(
       'ShoreShot',
-      `Ảnh đã copy nhưng không tự dán được: ${(stderr || message).trim()}. Bấm ${isMac ? '⌘V' : 'Ctrl+V'} để dán.`,
+      `Image copied, but auto-paste failed: ${(stderr || message).trim()}. Press ${isMac ? '⌘V' : 'Ctrl+V'} to paste.`,
     );
     return false;
   }
@@ -498,7 +498,7 @@ function sendPasteKeystroke(): Promise<unknown> {
   if (isMac) {
     return run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'], opts);
   }
-  return run('powershell.exe', [ // Windows (app chỉ build cho mac + win)
+  return run('powershell.exe', [ // Windows (the app only ships for mac + win)
     '-NoProfile',
     '-NonInteractive',
     '-ExecutionPolicy',
@@ -510,10 +510,10 @@ function sendPasteKeystroke(): Promise<unknown> {
 
 ipcMain.handle('capture:save', async (e, png: Uint8Array) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  // Ẩn overlay để hộp thoại Save không bị che.
+  // Hide the overlay so it doesn't cover the Save dialog.
   win?.hide();
   const { canceled, filePath } = await dialog.showSaveDialog({
-    title: 'Lưu ảnh chụp',
+    title: 'Save screenshot',
     defaultPath: path.join(app.getPath('pictures'), `Screenshot ${timestamp()}.png`),
     filters: [{ name: 'PNG', extensions: ['png'] }],
   });
@@ -526,5 +526,5 @@ ipcMain.handle('capture:save', async (e, png: Uint8Array) => {
   return true;
 });
 
-// sv-SE cho dạng "YYYY-MM-DD HH:MM:SS"; đổi ":" vì Windows cấm trong tên file.
+// sv-SE gives "YYYY-MM-DD HH:MM:SS"; swap ":" because Windows forbids it in file names.
 const timestamp = () => new Date().toLocaleString('sv-SE').replace(/:/g, '.');

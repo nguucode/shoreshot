@@ -1,5 +1,5 @@
-// Cửa sổ Cài đặt: ghi phím tắt chụp màn hình + chọn hành động của Enter.
-// Bọc trong IIFE để không đụng biến toàn cục với editor.ts.
+// Settings window: record the capture hotkey + choose what Enter does.
+// Wrapped in an IIFE so its globals don't clash with editor.ts.
 (() => {
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const field = el<HTMLButtonElement>('hotkeyField');
@@ -9,12 +9,12 @@
   const isMac = navigator.platform.toLowerCase().includes('mac');
 
   let current = '';
-  let currentPretty = ''; // main trả sẵn dạng hiển thị, khỏi gọi IPC lại
+  let currentPretty = ''; // main already returns the display form, no extra IPC
   let defaultHotkey = '';
   let recording = false;
 
-  // KeyboardEvent.code -> tên phím trong Electron Accelerator.
-  // Dùng `code` (vị trí phím vật lý) để không phụ thuộc bộ gõ / layout bàn phím.
+  // KeyboardEvent.code -> Electron Accelerator key name.
+  // Uses `code` (physical key position) so it doesn't depend on the input method / keyboard layout.
   const CODE_MAP: Record<string, string> = {
     Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete',
     Insert: 'Insert', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
@@ -44,7 +44,7 @@
     return m;
   }
 
-  /** Hiển thị trong lúc đang giữ phím, chưa thành tổ hợp hoàn chỉnh. */
+  /** Shown while keys are held, before the combination is complete. */
   function prettyLive(mods: string[], key = ''): string {
     const macSym: Record<string, string> = { Control: '⌃', Alt: '⌥', Shift: '⇧', Command: '⌘' };
     const winSym: Record<string, string> = { Control: 'Ctrl', Super: 'Win' };
@@ -61,7 +61,7 @@
   }
 
   function showCurrent(): void {
-    field.textContent = current ? currentPretty : 'Chưa gán';
+    field.textContent = current ? currentPretty : 'Not set';
     resetBtn.disabled = current === defaultHotkey;
   }
 
@@ -70,8 +70,8 @@
     recording = true;
     window.api.settings.setRecording(true);
     field.classList.add('recording');
-    field.textContent = 'Bấm tổ hợp phím…';
-    setMsg('Esc để huỷ. Cần ít nhất 1 phím bổ trợ (Ctrl, Alt, Shift, ⌘/Win), trừ F1 đến F24 và PrintScreen.');
+    field.textContent = 'Press a key combination…';
+    setMsg('Esc to cancel. Needs at least one modifier (Ctrl, Alt, Shift, ⌘/Win), except F1 to F24 and PrintScreen.');
   }
 
   function stopRecording(): void {
@@ -85,12 +85,12 @@
   async function apply(accel: string): Promise<void> {
     recording = false;
     field.classList.remove('recording');
-    field.textContent = 'Đang lưu…';
+    field.textContent = 'Saving…';
     const res = await window.api.settings.setHotkey(accel);
     if (res.ok) {
       current = res.hotkey;
       currentPretty = res.pretty;
-      setMsg(`Đã lưu. Bấm ${res.pretty} ở bất cứ đâu để chụp.`, 'ok');
+      setMsg(`Saved. Press ${res.pretty} anywhere to capture.`, 'ok');
     } else {
       setMsg(res.error, 'error');
     }
@@ -107,23 +107,23 @@
     e.stopPropagation();
     if (e.code === 'Escape' && !modifiers(e).length) {
       stopRecording();
-      setMsg('Đã huỷ, giữ nguyên phím tắt cũ.');
+      setMsg('Cancelled, kept the previous hotkey.');
       return;
     }
     const mods = modifiers(e);
     if (isModifier(e)) {
-      field.textContent = prettyLive(mods) || 'Bấm tổ hợp phím…';
+      field.textContent = prettyLive(mods) || 'Press a key combination…';
       return;
     }
     const key = keyFromCode(e.code);
     if (!key) {
-      setMsg(`Không dùng được phím "${e.key}". Chọn phím khác.`, 'error');
+      setMsg(`The "${e.key}" key can't be used. Pick another key.`, 'error');
       return;
     }
     const standalone = /^F\d+$/.test(key) || key === 'PrintScreen';
     if (!mods.length && !standalone) {
       field.textContent = key;
-      setMsg('Cần thêm ít nhất 1 phím bổ trợ (Ctrl, Alt, Shift, ⌘/Win).', 'error');
+      setMsg('Add at least one modifier (Ctrl, Alt, Shift, ⌘/Win).', 'error');
       return;
     }
     field.textContent = prettyLive(mods, key);
@@ -132,7 +132,7 @@
 
   window.addEventListener('keyup', (e) => {
     if (recording && isModifier(e)) {
-      field.textContent = prettyLive(modifiers(e)) || 'Bấm tổ hợp phím…';
+      field.textContent = prettyLive(modifiers(e)) || 'Press a key combination…';
     }
   });
 
@@ -142,8 +142,8 @@
     enterPastes.checked = await window.api.settings.setEnterPastes(enterPastes.checked);
     setMsg(
       enterPastes.checked
-        ? 'Enter / nút ✓ giờ sẽ copy và tự dán vào app trước đó.'
-        : 'Enter / nút ✓ giờ chỉ copy vào clipboard.',
+        ? 'Enter / ✓ now copies and pastes into the previous app.'
+        : 'Enter / ✓ now only copies to the clipboard.',
       'ok',
     );
   });
@@ -157,9 +157,9 @@
     el('pasteKey').textContent = isMac ? '⌘V' : 'Ctrl+V';
     showCurrent();
     if (!s.active) {
-      setMsg(`${s.pretty} đang bị app khác dùng nên chưa hoạt động. Bấm vào ô trên để chọn phím khác.`, 'error');
+      setMsg(`${s.pretty} is used by another app, so it isn't active. Click the field above to pick another.`, 'error');
     } else {
-      setMsg('Bấm vào ô trên rồi nhấn tổ hợp phím mới.');
+      setMsg('Click the field above, then press a new key combination.');
     }
   }
   void boot();

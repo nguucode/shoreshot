@@ -1,11 +1,11 @@
-// ShoreShot editor (renderer). Script thuần, không import, chạy trong overlay toàn màn hình.
-// Overlay được tạo sẵn và dùng lại: mỗi lần chụp main gửi 'capture:show', đóng thì 'capture:hidden'.
+// ShoreShot editor (renderer). Plain script, no imports, runs in the full-screen overlay.
+// The overlay is preloaded and reused: main sends 'capture:show' per capture and 'capture:hidden' on close.
 //
-// Các lớp vẽ (dưới lên trên), để mỗi lần di chuột chỉ tốn đúng phần đang đổi:
-//   #bg     ảnh chụp, vẽ 1 lần mỗi lần chụp.
-//   #sel    lớp tối + khung vùng chọn bằng CSS box-shadow: chỉ tô màu đặc, không vẽ lại ảnh.
-//   #stage  các hình đã chốt, chỉ to bằng vùng chọn, vẽ lại khi undo/redo/sửa chữ.
-//   #draft  hình đang vẽ dở, xoá vẽ lại mỗi lần di chuột.
+// Layers (bottom to top), so each mouse move only pays for what changed:
+//   #bg     the screenshot, drawn once per capture.
+//   #sel    dimming + selection frame as a CSS box-shadow: solid fills, never redraws the image.
+//   #stage  committed shapes, sized to the selection, redrawn on undo/redo/text edits.
+//   #draft  the shape being drawn, cleared and redrawn on every mouse move.
 
 type Tool = 'rect' | 'ellipse' | 'line' | 'pen' | 'text';
 interface Pt { x: number; y: number }
@@ -20,7 +20,7 @@ type Shape = RectShape | EllipseShape | LineShape | PenShape | TextShape;
 
 const SIZE_LIMITS: Record<Tool, [number, number]> = { rect: [1, 40], ellipse: [1, 40], line: [1, 40], pen: [1, 40], text: [10, 160] };
 const SIZE_STEP: Record<Tool, number> = { rect: 1, ellipse: 1, line: 1, pen: 1, text: 2 };
-const SIZE_LABEL: Record<Tool, string> = { rect: 'Viền', ellipse: 'Viền', line: 'Nét', pen: 'Nét bút', text: 'Cỡ chữ' };
+const SIZE_LABEL: Record<Tool, string> = { rect: 'Border', ellipse: 'Border', line: 'Stroke', pen: 'Stroke', text: 'Font size' };
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const LINE_HEIGHT = 1.2;
 
@@ -28,7 +28,7 @@ const ed = {
   phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'exporting',
   viewW: 0,
   viewH: 0,
-  k: 1, // pixel ảnh / CSS px
+  k: 1, // image pixels per CSS px
   selection: null as Box | null,
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
@@ -40,11 +40,11 @@ const ed = {
   draftStart: null as Pt | null,
   textEdit: null as { x: number; y: number; original: TextShape | null } | null,
   wheelAcc: 0,
-  enterPastes: false, // Enter / nút ✓ = copy + tự dán
-  pendingPaste: false, // chờ nhả hết phím bổ trợ rồi mới dán
+  enterPastes: false, // Enter / ✓ button = copy + auto-paste
+  pendingPaste: false, // wait for all modifiers to be released before pasting
   hudTimer: 0 as number,
-  barSize: null as { w: number; h: number } | null, // toolbar cố định kích thước, đo 1 lần
-  resize: null as { edge: Edge; start: Box } | null, // đang kéo cạnh/góc vùng chọn
+  barSize: null as { w: number; h: number } | null, // the toolbar has a fixed size, measured once
+  resize: null as { edge: Edge; start: Box } | null, // dragging an edge/corner of the selection
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -81,8 +81,8 @@ const clampToSel = (p: Pt): Pt => {
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
 
-const GRIP = 6; // px quanh cạnh/góc vùng chọn để bắt kéo dãn
-/** Điểm p nằm trên cạnh/góc nào của vùng chọn (null nếu không). */
+const GRIP = 6; // px around the selection edges/corners that grab a resize
+/** Which edge/corner of the selection point p is on (null if none). */
 function hitEdge(p: Pt, s: Box): Edge | null {
   if (p.x < s.x - GRIP || p.x > s.x + s.w + GRIP || p.y < s.y - GRIP || p.y > s.y + s.h + GRIP) return null;
   const e = {
@@ -105,10 +105,10 @@ const place = (el: HTMLElement, b: Box) => {
   el.style.height = `${b.h}px`;
 };
 
-/** Bitmap thô -> ImageData. RGBA dùng thẳng; BGRA (Chromium, little-endian) thì đổi chỗ kênh R và B. */
+/** Raw bitmap -> ImageData. RGBA is used as is; BGRA (Chromium, little-endian) gets R and B swapped. */
 function toImageData(bitmap: Uint8Array, w: number, h: number, bgra: boolean): ImageData {
   if (!bgra) return new ImageData(new Uint8ClampedArray(bitmap.buffer as ArrayBuffer, bitmap.byteOffset, w * h * 4), w, h);
-  const bytes = bitmap.byteOffset % 4 ? bitmap.slice() : bitmap; // Uint32Array cần offset chia hết cho 4
+  const bytes = bitmap.byteOffset % 4 ? bitmap.slice() : bitmap; // Uint32Array needs a 4-byte aligned offset
   const src = new Uint32Array(bytes.buffer, bytes.byteOffset, w * h);
   const out = new ImageData(w, h);
   const dst = new Uint32Array(out.data.buffer);
@@ -155,7 +155,7 @@ function drawShape(c: CanvasRenderingContext2D, s: Shape): void {
       c.arc(pts[0].x, pts[0].y, s.size / 2, 0, Math.PI * 2);
       c.fill();
     } else {
-      // Làm mượt nét bằng quadratic curve qua trung điểm.
+      // Smooth the stroke with quadratic curves through midpoints.
       c.beginPath();
       c.moveTo(pts[0].x, pts[0].y);
       for (let i = 1; i < pts.length - 1; i++) {
@@ -186,7 +186,7 @@ function textBounds(s: TextShape): Box {
   return { x: s.x, y: s.y, w, h: lines.length * s.size * LINE_HEIGHT };
 }
 
-/** Khung vùng chọn, badge kích thước, toolbar: chỉ đổi style, không vẽ canvas. */
+/** Selection frame, size badge, toolbar: style changes only, no canvas drawing. */
 function layout(): void {
   if (ed.selection) {
     const s = norm(ed.selection);
@@ -197,7 +197,7 @@ function layout(): void {
     const by = s.y - 28 >= 4 ? s.y - 28 : s.y + 6;
     sizeBadge.style.transform = `translate(${Math.max(4, s.x)}px, ${by}px)`;
   } else {
-    place(selEl, { x: 0, y: 0, w: 0, h: 0 }); // box-shadow của khung 0×0 vẫn phủ tối cả màn hình
+    place(selEl, { x: 0, y: 0, w: 0, h: 0 }); // a 0×0 frame's box-shadow still dims the whole screen
     selEl.classList.add('empty');
     sizeBadge.classList.add('hidden');
   }
@@ -222,7 +222,7 @@ function positionToolbar(): void {
   toolbarEl.classList.toggle('tips-below', y < 40);
 }
 
-/** Đặt #stage và #draft đúng vùng chọn (gọi khi vào editing). Toạ độ vẽ vẫn là CSS px của màn hình. */
+/** Fit #stage and #draft to the selection (called on entering editing). Drawing coordinates stay in screen CSS px. */
 function setupLayers(): void {
   const s = norm(ed.selection!);
   for (const [cv, c] of [[stage, ctx], [draftCv, draftCtx]] as const) {
@@ -237,7 +237,7 @@ function setupLayers(): void {
 function hideLayers(): void {
   for (const cv of [stage, draftCv]) {
     cv.classList.add('hidden');
-    cv.width = cv.height = 1; // trả bộ nhớ
+    cv.width = cv.height = 1; // free the memory
   }
 }
 
@@ -246,7 +246,7 @@ function clearLayer(c: CanvasRenderingContext2D): void {
   c.clearRect(s.x, s.y, s.w, s.h);
 }
 
-/** Vẽ lại toàn bộ hình đã chốt (undo/redo/sửa chữ). Thêm hình mới thì chỉ vẽ thêm hình đó. */
+/** Redraw every committed shape (undo/redo/text edit). A new shape is just drawn on top. */
 function redrawShapes(): void {
   if (ed.phase !== 'editing') return;
   clearLayer(ctx);
@@ -311,7 +311,7 @@ function openText(x: number, y: number, original: TextShape | null): void {
   if (original) {
     ed.color = original.color;
     ed.sizes.text = original.size;
-    redrawShapes(); // chữ cũ đã bị gỡ khỏi shapes để sửa trong ô nhập
+    redrawShapes(); // the old text was taken out of shapes to edit in the input
   }
   textInput.value = original?.text ?? '';
   textInput.classList.remove('hidden');
@@ -357,7 +357,7 @@ function cancelText(): void {
   ed.textEdit = null;
   textInput.classList.add('hidden');
   if (original) {
-    ed.shapes.push(original); // khôi phục chữ cũ nếu đang sửa
+    ed.shapes.push(original); // restore the original text when editing was cancelled
     drawShape(ctx, original);
   }
   syncToolbar();
@@ -387,7 +387,7 @@ function redoAction(): void {
   syncToolbar();
 }
 
-/** PNG của vùng chọn ở độ phân giải thật. toBlob encode ở thread nền nên không đứng UI. */
+/** PNG of the selection at native resolution. toBlob encodes off the main thread, so the UI doesn't freeze. */
 async function exportPNG(): Promise<Uint8Array> {
   commitText();
   const s = norm(ed.selection!);
@@ -400,28 +400,28 @@ async function exportPNG(): Promise<Uint8Array> {
   c.setTransform(k, 0, 0, k, -s.x * k, -s.y * k);
   ed.shapes.forEach((sh) => drawShape(c, sh));
   const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
-  if (!blob) throw new Error('Không xuất được ảnh');
+  if (!blob) throw new Error('Could not export the image');
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** Xuất ảnh rồi gửi sang main (copy / copyPaste / save); xong việc main tự ẩn overlay. */
+/** Export the image and send it to main (copy / copyPaste / save); main hides the overlay when done. */
 async function act(send: (png: Uint8Array) => Promise<boolean>): Promise<void> {
   if (ed.phase !== 'editing') return;
-  ed.phase = 'exporting'; // chặn bấm 2 lần trong lúc đang encode
+  ed.phase = 'exporting'; // block a second trigger while encoding
   let ok = false;
   try {
     const png = await exportPNG();
-    // Bấm Esc trong lúc encode: overlay đã ẩn và reset, bỏ ảnh này.
+    // Esc during encoding: the overlay was hidden and reset, drop this image.
     if (ed.phase === 'exporting') ok = await send(png);
   } finally {
-    // Huỷ hộp thoại Save (hoặc lỗi): quay lại sửa tiếp. Main đã ẩn overlay thì reset() đã đổi phase.
+    // Save dialog cancelled (or an error): back to editing. If main hid the overlay, reset() already changed phase.
     if (!ok && ed.phase === 'exporting') ed.phase = 'editing';
   }
 }
 
 const modsHeld = (e: KeyboardEvent) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
 
-/** Dán bằng phím tắt: đợi nhả hết Ctrl/⌘/Shift/Alt để phím ảo ⌘V/Ctrl+V không bị lẫn phím người dùng đang giữ. */
+/** Paste via shortcut: wait until Ctrl/⌘/Shift/Alt are released so the synthetic ⌘V/Ctrl+V doesn't mix with held keys. */
 function requestPaste(e?: KeyboardEvent): void {
   if (e && modsHeld(e)) {
     ed.pendingPaste = true;
@@ -430,7 +430,7 @@ function requestPaste(e?: KeyboardEvent): void {
   void act(window.api.copyPaste);
 }
 
-/** Hành động chính (Enter, nút ✓) và hành động phụ, theo cài đặt. */
+/** Primary action (Enter, ✓ button) and secondary action, per the setting. */
 function primaryAction(e?: KeyboardEvent): void {
   if (ed.enterPastes) requestPaste(e);
   else void act(window.api.copy);
@@ -474,7 +474,7 @@ window.addEventListener('mousedown', (e) => {
 
   if (!inBox(p, sel)) {
     commitText();
-    // Chưa vẽ gì thì cho chọn lại vùng mới.
+    // Nothing drawn yet: allow selecting a new region.
     if (ed.shapes.length === 0) {
       startSelecting(p);
       layout();
@@ -518,7 +518,7 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   if (ed.resize) {
-    // Kéo dãn: chỉ dời các cạnh đang nắm, kéo quá cạnh đối diện thì lật lại (norm lo).
+    // Resize: move only the grabbed edges; dragging past the opposite edge flips (norm handles it).
     const { edge, start: s } = ed.resize;
     const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
     const x1 = edge.l ? q.x : s.x;
@@ -540,7 +540,7 @@ window.addEventListener('mousemove', (e) => {
       let w = q.x - ed.draftStart.x;
       let h = q.y - ed.draftStart.y;
       if (e.shiftKey) {
-        // Giữ Shift: hình vuông / hình tròn.
+        // Shift: square / circle.
         const m = Math.max(Math.abs(w), Math.abs(h));
         w = (Math.sign(w) || 1) * m;
         h = (Math.sign(h) || 1) * m;
@@ -561,7 +561,7 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
   if (ed.phase === 'selecting' && ed.selStart) {
     let s = norm(ed.selection!);
-    // Click không kéo = chụp cả màn hình.
+    // Click without dragging = whole screen.
     if (s.w < 5 || s.h < 5) s = { x: 0, y: 0, w: ed.viewW, h: ed.viewH };
     ed.selection = s;
     ed.selStart = null;
@@ -573,10 +573,10 @@ window.addEventListener('mouseup', (e) => {
   }
   if (ed.resize) {
     const s = norm(ed.selection!);
-    ed.selection = s.w < 5 || s.h < 5 ? ed.resize.start : s; // nhỏ quá thì giữ khung cũ
+    ed.selection = s.w < 5 || s.h < 5 ? ed.resize.start : s; // too small: keep the previous frame
     ed.resize = null;
     setupLayers();
-    redrawShapes(); // hình vẽ giữ nguyên vị trí trên màn hình, chỉ bị cắt theo khung mới
+    redrawShapes(); // shapes keep their screen position and are clipped to the new frame
     layout();
     return;
   }
@@ -598,7 +598,7 @@ window.addEventListener('contextmenu', (e) => {
   if (onToolbar(e) || e.target === textInput) return;
   if (ed.textEdit) return cancelText();
   if (ed.phase === 'editing' && ed.shapes.length === 0) {
-    // Chuột phải khi chưa vẽ: bỏ vùng chọn, chọn lại.
+    // Right-click before drawing: drop the selection and select again.
     ed.phase = 'selecting';
     ed.selection = null;
     hint.classList.remove('hidden');
@@ -610,7 +610,7 @@ window.addEventListener('contextmenu', (e) => {
   }
 });
 
-// ---------- wheel: tăng/giảm viền, nét bút, cỡ chữ ----------
+// ---------- wheel: border width, stroke width, font size ----------
 window.addEventListener(
   'wheel',
   (e) => {
@@ -618,10 +618,10 @@ window.addEventListener(
     e.preventDefault();
     let dir = 0;
     if (e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50) {
-      dir = Math.sign(e.deltaY); // chuột có nấc
+      dir = Math.sign(e.deltaY); // notched mouse wheel
       ed.wheelAcc = 0;
     } else {
-      ed.wheelAcc += e.deltaY; // trackpad: cộng dồn để không nhảy quá nhanh
+      ed.wheelAcc += e.deltaY; // trackpad: accumulate so it doesn't jump too fast
       if (Math.abs(ed.wheelAcc) >= 50) {
         dir = Math.sign(ed.wheelAcc);
         ed.wheelAcc = 0;
@@ -630,7 +630,7 @@ window.addEventListener(
     if (!dir) return;
     const t = activeSizeTool();
     const [min, max] = SIZE_LIMITS[t];
-    // Lăn lên = to hơn, lăn xuống = nhỏ hơn.
+    // Scroll up = bigger, scroll down = smaller.
     ed.sizes[t] = clamp(ed.sizes[t] - dir * SIZE_STEP[t], min, max);
     if (ed.draft && ed.draft.kind === t) {
       ed.draft.size = ed.sizes[t];
@@ -664,7 +664,7 @@ window.addEventListener('keydown', (e) => {
   if (ed.phase !== 'editing') return;
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); return undo(); }
   if ((mod && k === 'z' && e.shiftKey) || (mod && k === 'y')) { e.preventDefault(); return redoAction(); }
-  // ⌘V / Ctrl+V (và cả bản có Shift) = copy + tự dán vào app trước đó.
+  // ⌘V / Ctrl+V (with or without Shift) = copy + auto-paste into the previous app.
   if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
   if (mod && k === 'c') { e.preventDefault(); void act(window.api.copy); return; }
   if (mod && k === 's') { e.preventDefault(); void act(window.api.save); return; }
@@ -686,7 +686,7 @@ window.addEventListener('keyup', (e) => {
 
 // ---------- toolbar ----------
 toolbarEl.addEventListener('mousedown', (e) => {
-  // Không cho toolbar cướp focus của ô nhập chữ (trừ color picker).
+  // Don't let the toolbar steal focus from the text input (except the color picker).
   if (!(e.target as HTMLElement).closest('#colorCustomWrap')) e.preventDefault();
 });
 toolbarEl.addEventListener('click', (e) => {
@@ -705,30 +705,30 @@ colorInput.addEventListener('change', () => {
   if (ed.textEdit) textInput.focus();
 });
 
-// ---------- vòng đời overlay ----------
+// ---------- overlay lifecycle ----------
 const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
 const ICON_PASTE = '<svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>';
 
 function setupActionButtons(): void {
   const mac = navigator.platform.toLowerCase().includes('mac');
   const m = mac ? '⌘' : 'Ctrl+';
-  const copyTitle = `Copy vào clipboard (${m}C)`;
-  const pasteTitle = `Copy và tự dán vào app trước đó (${m}V)`;
+  const copyTitle = `Copy to clipboard (${m}C)`;
+  const pasteTitle = `Copy and paste into the previous app (${m}V)`;
   const primary = $<HTMLButtonElement>('btnPrimary');
   const secondary = $<HTMLButtonElement>('btnSecondary');
   primary.dataset.tip = `${ed.enterPastes ? pasteTitle : copyTitle} · Enter`;
   secondary.dataset.tip = ed.enterPastes ? copyTitle : pasteTitle;
-  // Dòng hướng dẫn dưới toolbar: Enter làm gì, phím nào để copy rồi tự dán.
-  const paste = 'copy rồi tự dán vào app vừa dùng';
+  // Hint under the toolbar: what Enter does and which key copies then auto-pastes.
+  const paste = 'copy and paste into the previous app';
   $('pasteHint').innerHTML = ed.enterPastes
-    ? `<kbd>Enter</kbd> ${paste} · <kbd>${m}C</kbd> chỉ copy`
+    ? `<kbd>Enter</kbd> ${paste} · <kbd>${m}C</kbd> copy only`
     : `<kbd>Enter</kbd> copy · <kbd>${m}V</kbd> ${paste}`;
-  ed.barSize = null; // chữ hướng dẫn đổi theo cài đặt nên đo lại toolbar
-  secondary.setAttribute('aria-label', ed.enterPastes ? 'Copy' : 'Copy và dán');
+  ed.barSize = null; // the hint text follows the setting, so re-measure the toolbar
+  secondary.setAttribute('aria-label', ed.enterPastes ? 'Copy' : 'Copy and paste');
   secondary.innerHTML = ed.enterPastes ? ICON_COPY : ICON_PASTE;
 }
 
-/** Về trạng thái chờ và nhả bộ nhớ ảnh. Giữ lại công cụ, màu, cỡ nét giữa các lần chụp. */
+/** Back to idle and free the image memory. Tool, color and sizes carry over between captures. */
 function reset(): void {
   ed.phase = 'loading';
   ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = ed.resize = null;
@@ -756,8 +756,8 @@ window.api.onCapture((cap) => {
   ed.phase = 'selecting';
   syncToolbar();
   layout();
-  // Main hiện cửa sổ trong suốt trước; đợi 2 frame cho ảnh mới lên màn rồi mới cho hiện rõ.
-  // macOS có thể coi cửa sổ opacity 0 là bị che và dừng frame, nên quá 100 ms thì báo luôn.
+  // Main shows the window transparent first; wait 2 frames for the new image, then reveal it.
+  // macOS may treat an opacity-0 window as occluded and pause frames, so report after 100 ms regardless.
   let sent = false;
   const ready = () => {
     if (sent) return;

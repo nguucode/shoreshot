@@ -1,15 +1,15 @@
 name: build
 
-# Phát hành: push tag v* (vd: v0.1.0), HOẶC vào tab Actions > build > Run workflow > tick "release".
-#   -> build macOS + Windows -> tạo GitHub Release (tag = v + version trong package.json).
-# Run workflow không tick "release" -> chỉ build, file nằm ở mục Artifacts.
+# Release: push a v* tag (e.g. v0.1.0), OR go to Actions > build > Run workflow > tick "release".
+#   -> build macOS + Windows -> create a GitHub Release (tag = v + version in package.json).
+# Run workflow without "release" -> build only, files land under Artifacts.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       release:
-        description: 'Tạo GitHub Release (tag v<version trong package.json>)'
+        description: 'Create a GitHub Release (tag v<version in package.json>)'
         type: boolean
         default: false
 
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
-      # node-screenshots chỉ cài binary đúng kiến trúc máy build (runner mac là arm64): thêm bản x64 cho file Intel.
+      # node-screenshots only installs the binary for the build machine's arch (the mac runner is arm64): add x64 for the Intel build.
       - if: runner.os == 'macOS'
         run: npm install --no-save --no-audit --no-fund --force "node-screenshots-darwin-x64@$(node -p "require('node-screenshots/package.json').version")"
       - run: npm run build
@@ -75,7 +75,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
-            ## Cài đặt
+            ## Install
 
             **macOS** (Terminal):
             ```bash
@@ -86,9 +86,9 @@ jobs:
             irm https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.ps1 | iex
             ```
 
-            Hoặc tải tay bên dưới:
+            Or download manually below:
             - Mac Apple Silicon (M1/M2/M3/M4): `ShoreShot-*-mac-arm64.dmg`
             - Mac Intel: `ShoreShot-*-mac-x64.dmg`
             - Windows: `ShoreShot-Setup-*.exe`
 
-            App chưa ký số. macOS báo "damaged / không mở được" thì chạy: `xattr -cr /Applications/ShoreShot.app`. Windows SmartScreen: More info > Run anyway.
+            The app is not code-signed. If macOS says it is "damaged" or can't be opened, run: `xattr -cr /Applications/ShoreShot.app`. Windows SmartScreen: More info > Run anyway.

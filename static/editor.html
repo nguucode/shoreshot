@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
@@ -12,57 +12,57 @@
   <canvas id="draft" class="layer hidden"></canvas>
   <div id="sel" class="sel empty"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="sizeBadge" class="badge hidden"></div>
-  <div id="hint" class="hint">Kéo để chọn vùng · Click để chụp cả màn hình · Esc để thoát</div>
+  <div id="hint" class="hint">Drag to select an area · Click for the whole screen · Esc to exit</div>
   <textarea id="textInput" class="hidden" spellcheck="false" wrap="off" rows="1"></textarea>
   <div id="hud" class="hud hidden"></div>
 
-  <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Công cụ chú thích">
+  <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Annotation tools">
     <div class="row">
-    <button data-tool="rect" data-tip="Khung (R) · giữ Shift: hình vuông" aria-label="Vẽ khung">
+    <button data-tool="rect" data-tip="Rectangle (R) · hold Shift for a square" aria-label="Rectangle">
       <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>
     </button>
-    <button data-tool="ellipse" data-tip="Hình tròn / elip (O) · giữ Shift: hình tròn" aria-label="Vẽ hình tròn hoặc elip">
+    <button data-tool="ellipse" data-tip="Ellipse (O) · hold Shift for a circle" aria-label="Ellipse">
       <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg>
     </button>
-    <button data-tool="line" data-tip="Đường thẳng (L)" aria-label="Vẽ đường thẳng">
+    <button data-tool="line" data-tip="Line (L)" aria-label="Line">
       <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
     </button>
-    <button data-tool="pen" data-tip="Bút vẽ tự do (P)" aria-label="Bút vẽ tự do">
+    <button data-tool="pen" data-tip="Pen (P)" aria-label="Pen">
       <svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2.1 2.1 0 0 0-3-3L5 16l-1 4z"/><path d="M14 7l3 3"/></svg>
     </button>
-    <button data-tool="text" data-tip="Viết chữ (T)" aria-label="Viết chữ">
+    <button data-tool="text" data-tip="Text (T)" aria-label="Text">
       <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
     </button>
 
     <span class="sep"></span>
 
-    <button class="swatch" data-color="#ff3b30" style="--c:#ff3b30" data-tip="Đỏ" aria-label="Đỏ"></button>
-    <button class="swatch" data-color="#ff9500" style="--c:#ff9500" data-tip="Cam" aria-label="Cam"></button>
-    <button class="swatch" data-color="#ffcc00" style="--c:#ffcc00" data-tip="Vàng" aria-label="Vàng"></button>
-    <button class="swatch" data-color="#34c759" style="--c:#34c759" data-tip="Xanh lá" aria-label="Xanh lá"></button>
-    <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" data-tip="Xanh dương" aria-label="Xanh dương"></button>
-    <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" data-tip="Tím" aria-label="Tím"></button>
-    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" data-tip="Trắng" aria-label="Trắng"></button>
-    <button class="swatch" data-color="#111111" style="--c:#111111" data-tip="Đen" aria-label="Đen"></button>
-    <label id="colorCustomWrap" class="swatch custom" data-tip="Màu tuỳ chọn">
-      <input id="colorCustom" type="color" value="#ff3b30" aria-label="Màu tuỳ chọn" />
+    <button class="swatch" data-color="#ff3b30" style="--c:#ff3b30" data-tip="Red" aria-label="Red"></button>
+    <button class="swatch" data-color="#ff9500" style="--c:#ff9500" data-tip="Orange" aria-label="Orange"></button>
+    <button class="swatch" data-color="#ffcc00" style="--c:#ffcc00" data-tip="Yellow" aria-label="Yellow"></button>
+    <button class="swatch" data-color="#34c759" style="--c:#34c759" data-tip="Green" aria-label="Green"></button>
+    <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" data-tip="Blue" aria-label="Blue"></button>
+    <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" data-tip="Purple" aria-label="Purple"></button>
+    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" data-tip="White" aria-label="White"></button>
+    <button class="swatch" data-color="#111111" style="--c:#111111" data-tip="Black" aria-label="Black"></button>
+    <label id="colorCustomWrap" class="swatch custom" data-tip="Custom color">
+      <input id="colorCustom" type="color" value="#ff3b30" aria-label="Custom color" />
     </label>
 
     <span class="sep"></span>
-    <span id="sizeReadout" class="readout" data-tip="Lăn chuột để đổi kích thước"></span>
+    <span id="sizeReadout" class="readout" data-tip="Scroll to change the size"></span>
     <span class="sep"></span>
 
-    <button id="btnUndo" data-tip="Hoàn tác (⌘/Ctrl+Z)" aria-label="Hoàn tác">
+    <button id="btnUndo" data-tip="Undo (⌘/Ctrl+Z)" aria-label="Undo">
       <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
     </button>
-    <button id="btnClose" data-tip="Huỷ (Esc)" aria-label="Huỷ">
+    <button id="btnClose" data-tip="Cancel (Esc)" aria-label="Cancel">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
-    <button id="btnSave" data-tip="Lưu file PNG (⌘/Ctrl+S)" aria-label="Lưu file">
+    <button id="btnSave" data-tip="Save as PNG (⌘/Ctrl+S)" aria-label="Save">
       <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
     </button>
-    <button id="btnSecondary" aria-label="Copy và dán"></button>
-    <button id="btnPrimary" class="primary" aria-label="Xong">
+    <button id="btnSecondary" aria-label="Copy and paste"></button>
+    <button id="btnPrimary" class="primary" aria-label="Done">
       <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
     </button>
     </div>
