@@ -14,9 +14,9 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 | Pen | Tool `P`. Strokes are smoothed. Scroll to change the stroke width. |
 | Color | 8 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
-| Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). Settings can make `Enter` / the ✓ button do this instead of a plain copy. |
-| Other | `Enter` / ✓ button: copy (or copy + paste, per Settings). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
-| Settings | Tray menu > **Settings…**: capture hotkey, Enter / ✓ = copy and paste, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
+| Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
+| Other | `Enter` / ✓ button: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
+| Settings | Tray menu > **Settings…**: capture hotkey, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
 | Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 
 Scroll up = bigger, scroll down = smaller. Trackpad scrolling is accumulated so it doesn't jump too fast.

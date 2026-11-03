@@ -37,14 +37,11 @@ interface CapturePayload {
   pxH: number;
   width: number; // display size in CSS px (DIP)
   height: number;
-  enterPastes: boolean;
   retina1x: boolean;
 }
 
 interface Config {
   hotkey: string;
-  /** true: Enter / the ✓ button copies, then pastes into the previous app. */
-  enterPastes: boolean;
   /** Export at 1x on Retina / HiDPI displays (half the pixels at 2x) instead of native resolution. */
   retina1x: boolean;
   /** Whether macOS has already shown its Screen Recording prompt (it only asks once). */
@@ -55,7 +52,7 @@ let tray: Tray | null = null;
 let overlay: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let capturing = false;
-const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false, retina1x: false, screenAsked: false };
+const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, retina1x: false, screenAsked: false };
 let config: Config = { ...DEFAULT_CONFIG };
 let hotkeyActive = false; // whether the current hotkey is registered
 let revealTimer: NodeJS.Timeout | undefined;
@@ -94,7 +91,6 @@ async function loadConfig(): Promise<Config> {
     const raw = JSON.parse(await fs.readFile(configPath(), 'utf8')) as Partial<Config>;
     return {
       hotkey: typeof raw.hotkey === 'string' && raw.hotkey ? raw.hotkey : DEFAULT_HOTKEY,
-      enterPastes: raw.enterPastes === true,
       retina1x: raw.retina1x === true,
       screenAsked: raw.screenAsked === true,
     };
@@ -191,7 +187,7 @@ function openSettings(): void {
   }
   const win = new BrowserWindow({
     width: 440,
-    height: 380,
+    height: 300,
     show: false,
     resizable: false,
     minimizable: false,
@@ -233,7 +229,6 @@ ipcMain.handle('settings:get', () => ({
   active: hotkeyActive,
   defaultHotkey: DEFAULT_HOTKEY,
   platform: process.platform,
-  enterPastes: config.enterPastes,
 }));
 
 // Checkbox options in Settings. Returns the value actually applied.
@@ -243,8 +238,8 @@ ipcMain.handle('settings:setOption', async (_e, name: string, value: boolean) =>
     app.setLoginItemSettings({ openAtLogin: on });
     return app.getLoginItemSettings().openAtLogin;
   }
-  if (name !== 'enterPastes' && name !== 'retina1x') return false; // only known config keys
-  config[name] = on;
+  if (name !== 'retina1x') return false; // only known config keys
+  config.retina1x = on;
   await saveConfig();
   return on;
 });
@@ -391,7 +386,7 @@ async function startCapture(): Promise<void> {
     if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
       throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
     }
-    await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes, retina1x: config.retina1x });
+    await showCapture(display, { ...shot, width, height, retina1x: config.retina1x });
   } catch (err) {
     // Permission was turned off mid-run: explain how to turn it back on instead of erroring.
     if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {

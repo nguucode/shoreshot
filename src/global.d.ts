@@ -5,7 +5,6 @@ interface ShoreShotCapture {
   pxH: number;
   width: number; // CSS px (DIP)
   height: number;
-  enterPastes: boolean;
   retina1x: boolean;
 }
 
@@ -15,7 +14,6 @@ interface ShoreShotSettings {
   active: boolean;
   defaultHotkey: string;
   platform: string;
-  enterPastes: boolean;
   retina1x: boolean;
   openAtLogin: boolean;
   version: string;
@@ -38,7 +36,7 @@ interface ShoreShotApi {
     get(): Promise<ShoreShotSettings>;
     setHotkey(accel: string): Promise<ShoreShotSetHotkeyResult>;
     setRecording(on: boolean): void;
-    setOption(name: 'enterPastes' | 'retina1x' | 'openAtLogin', on: boolean): Promise<boolean>;
+    setOption(name: 'retina1x' | 'openAtLogin', on: boolean): Promise<boolean>;
     link(name: 'about' | 'issues' | 'update'): void;
   };
 }

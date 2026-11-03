@@ -61,12 +61,14 @@
     <button id="btnSave" data-tip="Save as PNG ({mod}S)" aria-label="Save">
       <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
     </button>
-    <button id="btnSecondary" aria-label="Copy and paste"></button>
-    <button id="btnPrimary" class="primary" aria-label="Done">
+    <button id="btnSecondary" data-tip="Copy and paste into the previous app ({mod}V)" aria-label="Copy and paste">
+      <svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>
+    </button>
+    <button id="btnPrimary" class="primary" data-tip="Copy to clipboard ({mod}C) · Enter" aria-label="Copy">
       <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
     </button>
   </div>
-  <div id="pasteHint" class="paste-hint"></div>
+  <div id="pasteHint" class="paste-hint"><kbd>{mod}C</kbd> to copy · <kbd>{mod}V</kbd> to paste</div>
   </div>
 
   <script src="../dist/renderer/editor.js"></script>
