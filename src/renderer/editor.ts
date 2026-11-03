@@ -7,17 +7,20 @@
 //   #stage  các hình đã chốt, chỉ to bằng vùng chọn, vẽ lại khi undo/redo/sửa chữ.
 //   #draft  hình đang vẽ dở, xoá vẽ lại mỗi lần di chuột.
 
-type Tool = 'rect' | 'pen' | 'text';
+type Tool = 'rect' | 'ellipse' | 'line' | 'pen' | 'text';
 interface Pt { x: number; y: number }
 interface Box { x: number; y: number; w: number; h: number }
+interface Edge { l: boolean; r: boolean; t: boolean; b: boolean }
 interface RectShape { kind: 'rect'; x: number; y: number; w: number; h: number; color: string; size: number }
+interface EllipseShape { kind: 'ellipse'; x: number; y: number; w: number; h: number; color: string; size: number }
+interface LineShape { kind: 'line'; x1: number; y1: number; x2: number; y2: number; color: string; size: number }
 interface PenShape { kind: 'pen'; points: Pt[]; color: string; size: number }
 interface TextShape { kind: 'text'; x: number; y: number; text: string; color: string; size: number }
-type Shape = RectShape | PenShape | TextShape;
+type Shape = RectShape | EllipseShape | LineShape | PenShape | TextShape;
 
-const SIZE_LIMITS: Record<Tool, [number, number]> = { rect: [1, 40], pen: [1, 40], text: [10, 160] };
-const SIZE_STEP: Record<Tool, number> = { rect: 1, pen: 1, text: 2 };
-const SIZE_LABEL: Record<Tool, string> = { rect: 'Viền', pen: 'Nét bút', text: 'Cỡ chữ' };
+const SIZE_LIMITS: Record<Tool, [number, number]> = { rect: [1, 40], ellipse: [1, 40], line: [1, 40], pen: [1, 40], text: [10, 160] };
+const SIZE_STEP: Record<Tool, number> = { rect: 1, ellipse: 1, line: 1, pen: 1, text: 2 };
+const SIZE_LABEL: Record<Tool, string> = { rect: 'Viền', ellipse: 'Viền', line: 'Nét', pen: 'Nét bút', text: 'Cỡ chữ' };
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const LINE_HEIGHT = 1.2;
 
@@ -30,7 +33,7 @@ const ed = {
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
   color: '#ff3b30',
-  sizes: { rect: 4, pen: 4, text: 28 } as Record<Tool, number>,
+  sizes: { rect: 4, ellipse: 4, line: 4, pen: 4, text: 28 } as Record<Tool, number>,
   shapes: [] as Shape[],
   redo: [] as Shape[],
   draft: null as Shape | null,
@@ -41,6 +44,7 @@ const ed = {
   pendingPaste: false, // chờ nhả hết phím bổ trợ rồi mới dán
   hudTimer: 0 as number,
   barSize: null as { w: number; h: number } | null, // toolbar cố định kích thước, đo 1 lần
+  resize: null as { edge: Edge; start: Box } | null, // đang kéo cạnh/góc vùng chọn
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -76,6 +80,25 @@ const clampToSel = (p: Pt): Pt => {
 };
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
+
+const GRIP = 6; // px quanh cạnh/góc vùng chọn để bắt kéo dãn
+/** Điểm p nằm trên cạnh/góc nào của vùng chọn (null nếu không). */
+function hitEdge(p: Pt, s: Box): Edge | null {
+  if (p.x < s.x - GRIP || p.x > s.x + s.w + GRIP || p.y < s.y - GRIP || p.y > s.y + s.h + GRIP) return null;
+  const e = {
+    l: Math.abs(p.x - s.x) <= GRIP,
+    r: Math.abs(p.x - (s.x + s.w)) <= GRIP,
+    t: Math.abs(p.y - s.y) <= GRIP,
+    b: Math.abs(p.y - (s.y + s.h)) <= GRIP,
+  };
+  return e.l || e.r || e.t || e.b ? e : null;
+}
+const edgeCursor = (e: Edge) =>
+  (e.l && e.t) || (e.r && e.b) ? 'nwse-resize'
+  : (e.r && e.t) || (e.l && e.b) ? 'nesw-resize'
+  : e.l || e.r ? 'ew-resize'
+  : 'ns-resize';
+const baseCursor = () => (ed.phase === 'editing' && ed.tool === 'text' ? 'text' : 'crosshair');
 const place = (el: HTMLElement, b: Box) => {
   el.style.transform = `translate(${b.x}px, ${b.y}px)`;
   el.style.width = `${b.w}px`;
@@ -105,6 +128,21 @@ function drawShape(c: CanvasRenderingContext2D, s: Shape): void {
     c.lineWidth = s.size;
     c.lineJoin = 'round';
     c.strokeRect(b.x, b.y, b.w, b.h);
+  } else if (s.kind === 'ellipse') {
+    const b = norm(s);
+    c.strokeStyle = s.color;
+    c.lineWidth = s.size;
+    c.beginPath();
+    c.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
+    c.stroke();
+  } else if (s.kind === 'line') {
+    c.strokeStyle = s.color;
+    c.lineWidth = s.size;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(s.x1, s.y1);
+    c.lineTo(s.x2, s.y2);
+    c.stroke();
   } else if (s.kind === 'pen') {
     c.strokeStyle = s.color;
     c.fillStyle = s.color;
@@ -181,6 +219,7 @@ function positionToolbar(): void {
   if (y < 4) y = s.y + s.h - th - gap;
   const x = clamp(s.x + s.w - tw, 4, ed.viewW - tw - 4);
   toolbarEl.style.transform = `translate(${x}px, ${y}px)`;
+  toolbarEl.classList.toggle('tips-below', y < 40);
 }
 
 /** Đặt #stage và #draft đúng vùng chọn (gọi khi vào editing). Toạ độ vẽ vẫn là CSS px của màn hình. */
@@ -232,7 +271,7 @@ function syncToolbar(): void {
   const t = activeSizeTool();
   sizeReadout.textContent = `${SIZE_LABEL[t]} ${ed.sizes[t]}`;
   btnUndo.disabled = ed.shapes.length === 0;
-  document.body.style.cursor = ed.phase === 'editing' && ed.tool === 'text' ? 'text' : 'crosshair';
+  document.body.style.cursor = baseCursor();
 }
 
 function showHud(msg: string, x: number, y: number): void {
@@ -426,6 +465,13 @@ window.addEventListener('mousedown', (e) => {
   if (ed.phase !== 'editing' || !ed.selection) return;
   const sel = norm(ed.selection);
 
+  const edge = hitEdge(p, sel);
+  if (edge) {
+    commitText();
+    ed.resize = { edge, start: sel };
+    return;
+  }
+
   if (!inBox(p, sel)) {
     commitText();
     // Chưa vẽ gì thì cho chọn lại vùng mới.
@@ -455,10 +501,11 @@ window.addEventListener('mousedown', (e) => {
 
   commitText();
   ed.draftStart = p;
+  const style = { color: ed.color, size: ed.sizes[ed.tool] };
   ed.draft =
-    ed.tool === 'rect'
-      ? { kind: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: ed.color, size: ed.sizes.rect }
-      : { kind: 'pen', points: [p], color: ed.color, size: ed.sizes.pen };
+    ed.tool === 'pen' ? { kind: 'pen', points: [p], ...style }
+    : ed.tool === 'line' ? { kind: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, ...style }
+    : { kind: ed.tool === 'ellipse' ? 'ellipse' : 'rect', x: p.x, y: p.y, w: 0, h: 0, ...style };
   drawDraft();
 });
 
@@ -470,11 +517,39 @@ window.addEventListener('mousemove', (e) => {
     layout();
     return;
   }
+  if (ed.resize) {
+    // Kéo dãn: chỉ dời các cạnh đang nắm, kéo quá cạnh đối diện thì lật lại (norm lo).
+    const { edge, start: s } = ed.resize;
+    const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
+    const x1 = edge.l ? q.x : s.x;
+    const x2 = edge.r ? q.x : s.x + s.w;
+    const y1 = edge.t ? q.y : s.y;
+    const y2 = edge.b ? q.y : s.y + s.h;
+    ed.selection = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    layout();
+    return;
+  }
+  if (ed.phase === 'editing' && !ed.draft && ed.selection) {
+    const edge = hitEdge(p, norm(ed.selection));
+    document.body.style.cursor = edge ? edgeCursor(edge) : baseCursor();
+  }
   if (ed.draft && ed.draftStart) {
     const q = clampToSel(p);
-    if (ed.draft.kind === 'rect') {
-      ed.draft.w = q.x - ed.draftStart.x;
-      ed.draft.h = q.y - ed.draftStart.y;
+    const d = ed.draft;
+    if (d.kind === 'rect' || d.kind === 'ellipse') {
+      let w = q.x - ed.draftStart.x;
+      let h = q.y - ed.draftStart.y;
+      if (e.shiftKey) {
+        // Giữ Shift: hình vuông / hình tròn.
+        const m = Math.max(Math.abs(w), Math.abs(h));
+        w = (Math.sign(w) || 1) * m;
+        h = (Math.sign(h) || 1) * m;
+      }
+      d.w = w;
+      d.h = h;
+    } else if (d.kind === 'line') {
+      d.x2 = q.x;
+      d.y2 = q.y;
     } else if (ed.draft.kind === 'pen') {
       ed.draft.points.push(q);
     }
@@ -496,12 +571,24 @@ window.addEventListener('mouseup', (e) => {
     layout();
     return;
   }
+  if (ed.resize) {
+    const s = norm(ed.selection!);
+    ed.selection = s.w < 5 || s.h < 5 ? ed.resize.start : s; // nhỏ quá thì giữ khung cũ
+    ed.resize = null;
+    setupLayers();
+    redrawShapes(); // hình vẽ giữ nguyên vị trí trên màn hình, chỉ bị cắt theo khung mới
+    layout();
+    return;
+  }
   if (ed.draft) {
     const d = ed.draft;
     ed.draft = null;
     ed.draftStart = null;
     drawDraft();
-    const keep = d.kind === 'rect' ? Math.abs(d.w) > 2 && Math.abs(d.h) > 2 : d.kind === 'pen';
+    const keep =
+      d.kind === 'rect' || d.kind === 'ellipse' ? Math.abs(d.w) > 2 && Math.abs(d.h) > 2
+      : d.kind === 'line' ? Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 2
+      : d.kind === 'pen';
     if (keep) pushShape(d);
   }
 });
@@ -584,6 +671,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); return primaryAction(e); }
   if (mod) return;
   if (k === 'r') setTool('rect');
+  else if (k === 'o') setTool('ellipse');
+  else if (k === 'l') setTool('line');
   else if (k === 'p') setTool('pen');
   else if (k === 't') setTool('text');
 });
@@ -627,8 +716,14 @@ function setupActionButtons(): void {
   const pasteTitle = `Copy và tự dán vào app trước đó (${m}V)`;
   const primary = $<HTMLButtonElement>('btnPrimary');
   const secondary = $<HTMLButtonElement>('btnSecondary');
-  primary.title = `${ed.enterPastes ? pasteTitle : copyTitle} · Enter`;
-  secondary.title = ed.enterPastes ? copyTitle : pasteTitle;
+  primary.dataset.tip = `${ed.enterPastes ? pasteTitle : copyTitle} · Enter`;
+  secondary.dataset.tip = ed.enterPastes ? copyTitle : pasteTitle;
+  // Dòng hướng dẫn dưới toolbar: Enter làm gì, phím nào để copy rồi tự dán.
+  const paste = 'copy rồi tự dán vào app vừa dùng';
+  $('pasteHint').innerHTML = ed.enterPastes
+    ? `<kbd>Enter</kbd> ${paste} · <kbd>${m}C</kbd> chỉ copy`
+    : `<kbd>Enter</kbd> copy · <kbd>${m}V</kbd> ${paste}`;
+  ed.barSize = null; // chữ hướng dẫn đổi theo cài đặt nên đo lại toolbar
   secondary.setAttribute('aria-label', ed.enterPastes ? 'Copy' : 'Copy và dán');
   secondary.innerHTML = ed.enterPastes ? ICON_COPY : ICON_PASTE;
 }
@@ -636,7 +731,7 @@ function setupActionButtons(): void {
 /** Về trạng thái chờ và nhả bộ nhớ ảnh. Giữ lại công cụ, màu, cỡ nét giữa các lần chụp. */
 function reset(): void {
   ed.phase = 'loading';
-  ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = null;
+  ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = ed.resize = null;
   ed.shapes = [];
   ed.redo = [];
   ed.pendingPaste = false;
