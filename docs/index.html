@@ -112,24 +112,30 @@ h1, h2 { text-wrap: balance; }
 
 /* Sections: centered heading above a centered column of content. */
 .row { padding: 112px 0; border-top: 1px solid var(--line); }
-.row > :first-child { text-align: center; margin-bottom: 56px; }
-.row > :last-child { max-width: 760px; margin: 0 auto; }
-.row > .list { max-width: 880px; }
+.row > :first-child { text-align: center; margin-bottom: 64px; }
+.row > :last-child { max-width: 680px; margin: 0 auto; }
 .row h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1; letter-spacing: -.035em; font-weight: 600; margin: 12px 0 0; }
+.sub { color: var(--muted); font-size: 17px; max-width: 46ch; margin: 14px auto 0; }
 .idx { font: 12px var(--mono); color: var(--faint); }
-.list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 48px; }
-.list div { padding: 22px 0; border-top: 1px solid var(--line); }
-.list div:nth-child(-n+2) { border-top: 0; padding-top: 0; }
-.list h3 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 6px; }
-.list p { margin: 0; color: var(--muted); font-size: 15px; }
 kbd { font: 500 12px var(--mono); padding: 2px 7px; border-radius: 6px; background: var(--raised); border: 1px solid var(--line); box-shadow: 0 1px 0 var(--line); color: var(--fg); white-space: nowrap; }
 
-.keys { width: 100%; border-collapse: collapse; font-size: 15px; }
-.keys td { padding: 14px 0; border-top: 1px solid var(--line); vertical-align: top; }
-.keys tr:first-child td { border-top: 0; padding-top: 0; }
-.keys td:first-child { color: var(--muted); padding-right: 24px; width: 45%; }
-.keys td:last-child { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.keys small { color: var(--faint); font-size: 13px; }
+/* Features: a centered 3 x 2 grid, icon over title over text. */
+.row > .feats { max-width: 1040px; }
+.feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 56px 48px; text-align: center; }
+.ico { width: 48px; height: 48px; margin: 0 auto 20px; display: grid; place-items: center; border-radius: 14px; background: var(--raised); border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(24, 24, 27, .04); color: var(--fg); transition: transform .4s var(--ease); }
+.feats > div:hover .ico { transform: translateY(-2px); }
+.ico svg { width: 22px; height: 22px; }
+.feats h3 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 8px; }
+.feats p { margin: 0 auto; color: var(--muted); font-size: 15px; max-width: 30ch; text-wrap: pretty; }
+kbd.sym { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Symbol", sans-serif; }
+
+/* Shortcuts: a 4 x 2 grid of keys with the action under each, cells split by 1px lines. */
+.row > .keys { max-width: 960px; }
+.keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+.keys > div { background: var(--bg); padding: 36px 16px 30px; text-align: center; display: grid; gap: 14px; justify-items: center; align-content: center; }
+.keys .k { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.keys kbd { font-size: 15px; min-width: 36px; padding: 6px 10px; border-radius: 9px; border-bottom-width: 2px; box-shadow: none; }
+.keys span { font-size: 14px; color: var(--muted); }
 
 details { border-top: 1px solid var(--line); }
 details:first-of-type { border-top: 0; }
@@ -163,16 +169,17 @@ footer a:hover { color: var(--fg); }
   .stage { margin-top: 56px; }
   .row { padding: 80px 0; }
   .row > :first-child { margin-bottom: 40px; }
+  .feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .keys { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .wrap { padding: 0 16px; }
   .nav nav a:not(.btn) { display: none; }
-  .list { grid-template-columns: minmax(0, 1fr); }
-  .list div:nth-child(2) { border-top: 1px solid var(--line); padding-top: 22px; }
-  .keys td { display: block; width: auto !important; padding: 0; border: 0; }
-  .keys tr { display: block; padding: 14px 0; border-top: 1px solid var(--line); }
-  .keys tr:first-child { border-top: 0; padding-top: 0; }
-  .keys td:first-child { margin-bottom: 6px; }
+  .feats { grid-template-columns: minmax(0, 1fr); gap: 44px; }
+  .keys { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .keys > div { padding: 28px 12px 24px; }
+  .keys kbd { font-size: 13px; min-width: 30px; padding: 5px 7px; }
+  .keys .k { gap: 4px; }
   .steps { flex-wrap: wrap; }
   .cta { padding: 80px 0; }
 }
@@ -237,34 +244,33 @@ footer a:hover { color: var(--fg); }
   </section>
 
   <section class="row reveal" id="features">
-    <div><span class="idx">01</span><h2>Built for the five-second screenshot.</h2></div>
-    <div class="list">
-      <div><h3>Area, window or full screen</h3><p>Drag a region, click a window, or take the whole display. Each mode gets its own hotkey.</p></div>
-      <div><h3>Opens on the keypress</h3><p>The capture window is loaded before you need it, so there is no wait between the hotkey and the frame.</p></div>
-      <div><h3>Five tools, six colours</h3><p>Rectangle, ellipse, line, pen and text. Scroll to change the stroke or the font size.</p></div>
-      <div><h3>Paste where you were</h3><p><kbd>⌘V</kbd> copies the capture and pastes it into the app you came from.</p></div>
-      <div><h3>Change your mind</h3><p>Hover a shape and press <kbd>⌫</kbd> to remove it. Undo, redo, click text to edit it.</p></div>
-      <div><h3>Stays on your machine</h3><p>No account, no upload, no tracking. The only request is the update check to GitHub.</p></div>
+    <div><span class="idx">01</span><h2>Built for the five-second screenshot.</h2><p class="sub">Everything a screenshot needs, and nothing that slows it down.</p></div>
+    <div class="feats">
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 3"/></svg></div><h3>Area, window or full screen</h3><p>Drag a region, click a window, or take the whole display. Each mode gets its own hotkey.</p></div>
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z"/></svg></div><h3>Opens on the keypress</h3><p>The capture window is loaded before you need it, so the frame is there the moment you press.</p></div>
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg></div><h3>Five tools, six colours</h3><p>Rectangle, ellipse, line, pen and text. Scroll to change the stroke or the font size.</p></div>
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9.5 4V3h5v1"/><path d="M12 9v7m-3-3 3 3 3-3"/></svg></div><h3>Paste where you were</h3><p><kbd>⌘V</kbd> copies the capture and pastes it into the app you came from.</p></div>
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></div><h3>Change your mind</h3><p>Hover a shape and press <kbd class="sym">⌫</kbd> to remove it. Undo, redo, click text to edit it.</p></div>
+      <div><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div><h3>Stays on your machine</h3><p>No account, no upload, no tracking. The only request is the update check to GitHub.</p></div>
     </div>
   </section>
 
   <section class="row reveal" id="shortcuts">
-    <div><span class="idx">02</span><h2>Keys, not menus.</h2></div>
-    <table class="keys">
-      <tr><td>Capture an area</td><td><kbd>⌘⇧X</kbd><small>Windows</small><kbd>Ctrl⇧X</kbd></td></tr>
-      <tr><td>Full screen, window</td><td><small>Set a hotkey in Settings, or use the tray menu</small></td></tr>
-      <tr><td>Rectangle, ellipse, line, text, pen</td><td><kbd>R</kbd><kbd>O</kbd><kbd>L</kbd><kbd>T</kbd><kbd>P</kbd><small>Shift for a square or circle</small></td></tr>
-      <tr><td>Copy</td><td><kbd>⌘C</kbd><kbd>Enter</kbd></td></tr>
-      <tr><td>Copy and paste into the previous app</td><td><kbd>⌘V</kbd></td></tr>
-      <tr><td>Save PNG</td><td><kbd>⌘S</kbd></td></tr>
-      <tr><td>Undo, redo</td><td><kbd>⌘Z</kbd><kbd>⌘⇧Z</kbd></td></tr>
-      <tr><td>Delete the hovered shape</td><td><kbd>⌫</kbd><small>or right-click</small></td></tr>
-      <tr><td>Close</td><td><kbd>Esc</kbd><small>Ctrl instead of ⌘ on Windows</small></td></tr>
-    </table>
+    <div><span class="idx">02</span><h2>Keys, not menus.</h2><p class="sub">Every action has a key. On Windows, use Ctrl instead of ⌘. Full screen and window capture get their hotkeys in Settings.</p></div>
+    <div class="keys">
+      <div><div class="k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>X</kbd></div><span>Capture an area</span></div>
+      <div><div class="k"><kbd>R</kbd><kbd>O</kbd><kbd>L</kbd><kbd>T</kbd><kbd>P</kbd></div><span>Box, ellipse, line, text, pen</span></div>
+      <div><div class="k"><kbd>⌘</kbd><kbd>C</kbd></div><span>Copy</span></div>
+      <div><div class="k"><kbd>⌘</kbd><kbd>V</kbd></div><span>Paste into the last app</span></div>
+      <div><div class="k"><kbd>⌘</kbd><kbd>S</kbd></div><span>Save PNG</span></div>
+      <div><div class="k"><kbd>⌘</kbd><kbd>Z</kbd></div><span>Undo</span></div>
+      <div><div class="k"><kbd class="sym">⌫</kbd></div><span>Delete the hovered shape</span></div>
+      <div><div class="k"><kbd>Esc</kbd></div><span>Close</span></div>
+    </div>
   </section>
 
   <section class="row reveal" id="faq">
-    <div><span class="idx">03</span><h2>Questions.</h2></div>
+    <div><span class="idx">03</span><h2>Questions.</h2><p class="sub">Permissions, installs and updates.</p></div>
     <div>
       <details><summary>Is it really free?</summary><p>Yes. ShoreShot is open source under the MIT license. No paid tier, no account.</p></details>
       <details><summary>Why does macOS ask for Screen Recording?</summary><p>Every app that reads the screen needs it. Turn on ShoreShot in System Settings › Privacy &amp; Security › Screen &amp; System Audio Recording, then choose “Quit &amp; Reopen”.</p></details>
