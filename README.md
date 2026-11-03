@@ -14,6 +14,7 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 | Line | Tool `L`. Scroll to change the stroke width. |
 | Text | Tool `T`. Click to type, `Enter` to finish, `Shift+Enter` for a new line, `Esc` to cancel. While typing, drag the dashed frame around the text to move it. Scroll to change the font size (10 to 160px). Click existing text to edit its content, size, color. |
 | Pen | Tool `P`. Strokes are smoothed. Scroll to change the stroke width. |
+| Delete | Hover a shape, line, pen stroke or text: it gets a dashed frame. Press `⌫` / `Delete` or right-click to delete it. `⌘/Ctrl+Z` brings it back. |
 | Color | 6 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
@@ -123,5 +124,5 @@ build/icon.png           app icon (electron-builder converts it to .icns/.ico)
 ## Current limitations
 
 - One display per capture (the one under the cursor). A selection can't span two displays.
-- Shapes can't be selected and moved after drawing (text can be clicked to edit).
+- Shapes can't be moved after drawing (text can be clicked to edit, anything can be deleted).
 - Window capture crops what is on screen inside the window's frame, so anything covering that window is included.

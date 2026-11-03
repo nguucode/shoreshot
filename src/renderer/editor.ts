@@ -37,10 +37,13 @@ const ed = {
   color: '#ff3b30',
   sizes: { rect: 4, ellipse: 4, line: 4, pen: 4, text: 28 } as Record<Tool, number>,
   shapes: [] as Shape[],
-  redo: [] as Shape[],
+  undo: [] as Shape[][], // earlier versions of shapes (each change replaces the array)
+  redo: [] as Shape[][],
+  hover: null as Shape | null, // committed shape under the mouse: Delete / right-click removes it
   draft: null as Shape | null,
   draftStart: null as Pt | null,
-  textEdit: null as { x: number; y: number; original: TextShape | null } | null,
+  // before: shapes when editing started; index: the text being edited in it (-1 = new text).
+  textEdit: null as { x: number; y: number; before: Shape[]; index: number } | null,
   wheelAcc: 0,
   pendingPaste: false, // wait for all modifiers to be released before pasting
   hudTimer: 0 as number,
@@ -76,6 +79,7 @@ const WINDOW_HINT = 'Click a window · Drag to select an area · Esc to exit';
 
 /** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips and the hint use {mod}. */
 const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
+const MOD_DEL = MOD === '⌘' ? '⌫' : 'Delete';
 document.querySelectorAll<HTMLElement>('[data-tip*="{mod}"]').forEach((el) => {
   el.dataset.tip = el.dataset.tip!.replace('{mod}', MOD);
 });
@@ -284,9 +288,78 @@ function redrawShapes(): void {
   ed.shapes.forEach((sh) => drawShape(ctx, sh));
 }
 
+/** The shape being drawn, or a dashed frame around the hovered shape. */
 function drawDraft(): void {
   clearLayer(draftCtx);
   if (ed.draft) drawShape(draftCtx, ed.draft);
+  else if (ed.hover) {
+    const b = shapeBounds(ed.hover);
+    const pad = (ed.hover.kind === 'text' ? 0 : ed.hover.size / 2) + 4;
+    draftCtx.save();
+    draftCtx.strokeStyle = '#3b82f6';
+    draftCtx.lineWidth = 1.5;
+    draftCtx.setLineDash([5, 4]);
+    draftCtx.strokeRect(b.x - pad, b.y - pad, b.w + 2 * pad, b.h + 2 * pad);
+    draftCtx.restore();
+  }
+}
+
+function shapeBounds(s: Shape): Box {
+  if (s.kind === 'rect' || s.kind === 'ellipse') return norm(s);
+  if (s.kind === 'text') return textBounds(s);
+  const xs = s.kind === 'line' ? [s.x1, s.x2] : s.points.map((q) => q.x);
+  const ys = s.kind === 'line' ? [s.y1, s.y2] : s.points.map((q) => q.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/** Distance from p to the segment a-b. */
+function segDist(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = dx || dy ? clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy), 0, 1) : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+}
+
+/** Whether p is on the shape: on its stroke (rect, ellipse, line, pen) or inside it (text). */
+function onShape(p: Pt, s: Shape): boolean {
+  if (s.kind === 'text') return inBox(p, textBounds(s));
+  const tol = s.size / 2 + 4;
+  if (s.kind === 'line') return segDist(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) <= tol;
+  if (s.kind === 'pen') return s.points.some((q, i) => segDist(p, q, s.points[i + 1] ?? q) <= tol);
+  const b = norm(s);
+  if (s.kind === 'rect') {
+    const outer = { x: b.x - tol, y: b.y - tol, w: b.w + 2 * tol, h: b.h + 2 * tol };
+    const inner = { x: b.x + tol, y: b.y + tol, w: b.w - 2 * tol, h: b.h - 2 * tol };
+    return inBox(p, outer) && !(inner.w > 0 && inner.h > 0 && inBox(p, inner));
+  }
+  // Ellipse: radial distance from the outline, scaled to px by the smaller radius.
+  const rx = Math.max(b.w / 2, 1);
+  const ry = Math.max(b.h / 2, 1);
+  const d = Math.hypot((p.x - b.x - rx) / rx, (p.y - b.y - ry) / ry);
+  return Math.abs(d - 1) * Math.min(rx, ry) <= tol;
+}
+
+/** Topmost committed shape under p. */
+function hitShape(p: Pt): Shape | null {
+  for (let i = ed.shapes.length - 1; i >= 0; i--) if (onShape(p, ed.shapes[i])) return ed.shapes[i];
+  return null;
+}
+
+function setHover(s: Shape | null): void {
+  if (s === ed.hover) return;
+  ed.hover = s;
+  drawDraft();
+  if (s) {
+    const b = shapeBounds(s);
+    hud.textContent = `${MOD_DEL} or right-click to delete`;
+    hud.classList.remove('hidden');
+    hud.style.transform = `translate(${clamp(b.x, 4, ed.viewW - 220)}px, ${clamp(b.y + b.h + 10, 4, ed.viewH - 30)}px)`;
+    window.clearTimeout(ed.hudTimer);
+  } else {
+    hud.classList.add('hidden');
+  }
 }
 
 // ---------- UI state ----------
@@ -302,7 +375,7 @@ function syncToolbar(): void {
   const t = activeSizeTool();
   sizeReadout.textContent = String(ed.sizes[t]);
   sizeReadout.dataset.tip = `${SIZE_LABEL[t]} ${ed.sizes[t]}px · scroll to change`;
-  btnUndo.disabled = ed.shapes.length === 0;
+  btnUndo.disabled = ed.undo.length === 0;
   document.body.style.cursor = baseCursor();
 }
 
@@ -330,20 +403,38 @@ function setColor(c: string): void {
   syncToolbar();
 }
 
-function pushShape(s: Shape): void {
-  ed.shapes.push(s);
+/** Replace the shapes with a new version, keeping the old one for undo. */
+function setShapes(next: Shape[]): void {
+  ed.undo.push(ed.shapes);
   ed.redo = [];
-  drawShape(ctx, s);
+  ed.shapes = next;
+  setHover(null);
+  redrawShapes();
   syncToolbar();
 }
 
+function pushShape(s: Shape): void {
+  ed.undo.push(ed.shapes);
+  ed.redo = [];
+  ed.shapes = [...ed.shapes, s];
+  drawShape(ctx, s); // on top: no full redraw
+  syncToolbar();
+}
+
+function deleteShape(s: Shape): void {
+  setShapes(ed.shapes.filter((x) => x !== s));
+}
+
 // ---------- text ----------
-function openText(x: number, y: number, original: TextShape | null): void {
-  ed.textEdit = { x, y, original };
+function openText(x: number, y: number, index: number): void {
+  const original = index >= 0 ? (ed.shapes[index] as TextShape) : null;
+  ed.textEdit = { x, y, before: ed.shapes, index };
+  setHover(null);
   if (original) {
     ed.color = original.color;
     ed.sizes.text = original.size;
-    redrawShapes(); // the old text was taken out of shapes to edit in the input
+    ed.shapes = ed.shapes.filter((_, i) => i !== index); // shown in the input while editing
+    redrawShapes();
   }
   textInput.value = original?.text ?? '';
   textInput.classList.remove('hidden');
@@ -380,25 +471,30 @@ function autosizeText(): void {
 function commitText(): void {
   if (!ed.textEdit) return;
   const text = textInput.value.replace(/\s+$/, '');
-  const { x, y } = ed.textEdit;
+  const { x, y, before, index } = ed.textEdit;
   ed.textEdit = null;
   ed.textMove = null;
   textInput.classList.add('hidden');
   textInput.blur();
-  if (text.trim()) pushShape({ kind: 'text', x, y, text, color: ed.color, size: ed.sizes.text });
+  ed.shapes = before;
+  const shape: TextShape = { kind: 'text', x, y, text, color: ed.color, size: ed.sizes.text };
+  if (index < 0) {
+    if (text.trim()) pushShape(shape);
+  } else {
+    // Edited text keeps its place in the stack; emptied text is deleted.
+    setShapes(text.trim() ? before.map((s, i) => (i === index ? shape : s)) : before.filter((_, i) => i !== index));
+  }
+  redrawShapes();
   syncToolbar();
 }
 
 function cancelText(): void {
   if (!ed.textEdit) return;
-  const original = ed.textEdit.original;
+  ed.shapes = ed.textEdit.before; // back to before editing, original text included
   ed.textEdit = null;
   ed.textMove = null;
   textInput.classList.add('hidden');
-  if (original) {
-    ed.shapes.push(original); // restore the original text when editing was cancelled
-    drawShape(ctx, original);
-  }
+  redrawShapes();
   syncToolbar();
 }
 
@@ -413,17 +509,22 @@ function hitText(p: Pt): number {
 // ---------- actions ----------
 function undo(): void {
   if (ed.textEdit) return cancelText();
-  const s = ed.shapes.pop();
-  if (s) ed.redo.push(s);
+  const prev = ed.undo.pop();
+  if (!prev) return;
+  ed.redo.push(ed.shapes);
+  ed.shapes = prev;
+  setHover(null);
   syncToolbar();
   redrawShapes();
 }
 function redoAction(): void {
-  const s = ed.redo.pop();
-  if (!s) return;
-  ed.shapes.push(s);
-  drawShape(ctx, s);
+  const next = ed.redo.pop();
+  if (!next) return;
+  ed.undo.push(ed.shapes);
+  ed.shapes = next;
+  setHover(null);
   syncToolbar();
+  redrawShapes();
 }
 
 /** PNG of the selection at native resolution. toBlob encodes off the main thread, so the UI doesn't freeze. */
@@ -496,6 +597,7 @@ function enterEditing(s: Box): void {
 function startSelecting(p: Pt): void {
   ed.phase = 'selecting';
   ed.shapes = [];
+  ed.undo = [];
   ed.redo = [];
   ed.selStart = p;
   ed.selection = { x: p.x, y: p.y, w: 0, h: 0 };
@@ -543,16 +645,17 @@ window.addEventListener('mousedown', (e) => {
     }
     const idx = hitText(p);
     if (idx >= 0) {
-      const [orig] = ed.shapes.splice(idx, 1) as TextShape[];
-      openText(orig.x, orig.y, orig);
+      const t = ed.shapes[idx] as TextShape;
+      openText(t.x, t.y, idx);
     } else {
-      openText(p.x, p.y - (ed.sizes.text * LINE_HEIGHT) / 2, null);
+      openText(p.x, p.y - (ed.sizes.text * LINE_HEIGHT) / 2, -1);
     }
     e.preventDefault();
     return;
   }
 
   commitText();
+  setHover(null);
   ed.draftStart = p;
   const style = { color: ed.color, size: ed.sizes[ed.tool] };
   ed.draft =
@@ -595,6 +698,7 @@ window.addEventListener('mousemove', (e) => {
   if (ed.phase === 'editing' && !ed.draft && ed.selection) {
     const edge = hitEdge(p, norm(ed.selection));
     document.body.style.cursor = edge ? edgeCursor(edge) : baseCursor();
+    if (!ed.textEdit) setHover(edge || onToolbar(e) ? null : hitShape(p));
   }
   if (ed.draft && ed.draftStart) {
     const q = clampToSel(p);
@@ -659,6 +763,7 @@ window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (onToolbar(e) || e.target === textInput) return;
   if (ed.textEdit) return cancelText();
+  if (ed.phase === 'editing' && ed.hover) return deleteShape(ed.hover);
   if (ed.phase === 'editing' && ed.shapes.length === 0) {
     // Right-click before drawing: drop the selection and select again.
     ed.phase = 'selecting';
@@ -742,6 +847,7 @@ window.addEventListener('keydown', (e) => {
   if (mod && k === 'c') { e.preventDefault(); void act(window.api.copy); return; }
   if (mod && k === 's') { e.preventDefault(); void act(window.api.save); return; }
   if (e.key === 'Enter') { e.preventDefault(); void act(window.api.copy); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && ed.hover) { e.preventDefault(); return deleteShape(ed.hover); }
   if (mod) return;
   if (k === 'r') setTool('rect');
   else if (k === 'o') setTool('ellipse');
@@ -785,7 +891,9 @@ function reset(): void {
   ed.windows = [];
   hint.textContent = HINT;
   ed.shapes = [];
+  ed.undo = [];
   ed.redo = [];
+  ed.hover = null;
   ed.pendingPaste = false;
   textInput.classList.add('hidden');
   hud.classList.add('hidden');
