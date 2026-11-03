@@ -17,7 +17,7 @@
       <p id="msg" class="msg" aria-live="polite"></p>
     </section>
 
-    <section>
+    <section class="options">
       <label class="check">
         <input id="enterPastes" type="checkbox" />
         <span>
@@ -25,7 +25,29 @@
           <small>After capturing, the image is pasted into the app you were using (Slack, Telegram, Figma…). When off, Enter only copies; <kbd id="pasteKey"></kbd> still copies and pastes.</small>
         </span>
       </label>
+      <label class="check">
+        <input id="retina1x" type="checkbox" />
+        <span>
+          <strong>Export at 1× on Retina displays</strong>
+          <small>Half the width and height on Retina / HiDPI screens (e.g. 2448×1200 → 1224×600). Smaller files, slightly less sharp.</small>
+        </span>
+      </label>
+      <label class="check">
+        <input id="openAtLogin" type="checkbox" />
+        <span>
+          <strong>Open at login</strong>
+          <small>Start ShoreShot in the background when you log in.</small>
+        </span>
+      </label>
     </section>
+
+    <footer>
+      <span id="version"></span>
+      <button id="linkUpdate" class="link update hidden" type="button"></button>
+      <span class="spacer"></span>
+      <button id="linkAbout" class="link" type="button">About</button>
+      <button id="linkIssues" class="link" type="button">Report an issue</button>
+    </footer>
   </main>
   <script src="../dist/renderer/settings.js"></script>
 </body>

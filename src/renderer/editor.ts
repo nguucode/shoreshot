@@ -29,6 +29,7 @@ const ed = {
   viewW: 0,
   viewH: 0,
   k: 1, // image pixels per CSS px
+  retina1x: false, // export at 1x instead of native resolution (Settings)
   selection: null as Box | null,
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
@@ -87,6 +88,8 @@ const clampToSel = (p: Pt): Pt => {
 };
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
+/** Exported pixels per CSS px: native, or 1 when "Export at 1x on Retina" is on. */
+const outScale = () => (ed.retina1x ? 1 : ed.k);
 
 const GRIP = 6; // px around the selection edges/corners that grab a resize
 /** Which edge/corner of the selection point p is on (null if none). */
@@ -199,7 +202,7 @@ function layout(): void {
     const s = norm(ed.selection);
     place(selEl, s);
     selEl.classList.remove('empty');
-    sizeBadge.textContent = `${Math.round(s.w * ed.k)} × ${Math.round(s.h * ed.k)}`;
+    sizeBadge.textContent = `${Math.round(s.w * outScale())} × ${Math.round(s.h * outScale())}`;
     sizeBadge.classList.remove('hidden');
     const by = s.y - 28 >= 4 ? s.y - 28 : s.y + 6;
     sizeBadge.style.transform = `translate(${Math.max(4, s.x)}px, ${by}px)`;
@@ -398,12 +401,13 @@ function redoAction(): void {
 async function exportPNG(): Promise<Uint8Array> {
   commitText();
   const s = norm(ed.selection!);
-  const k = ed.k;
+  const k = outScale();
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(s.w * k));
   out.height = Math.max(1, Math.round(s.h * k));
   const c = out.getContext('2d')!;
-  c.drawImage(bg, s.x * k, s.y * k, s.w * k, s.h * k, 0, 0, out.width, out.height);
+  c.imageSmoothingQuality = 'high'; // matters when downscaling for the 1x option
+  c.drawImage(bg, s.x * ed.k, s.y * ed.k, s.w * ed.k, s.h * ed.k, 0, 0, out.width, out.height);
   c.setTransform(k, 0, 0, k, -s.x * k, -s.y * k);
   ed.shapes.forEach((sh) => drawShape(c, sh));
   const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
@@ -750,6 +754,7 @@ window.api.onCapture((cap) => {
   ed.viewH = cap.height;
   ed.k = cap.pxW / cap.width;
   ed.enterPastes = cap.enterPastes;
+  ed.retina1x = cap.retina1x;
   setupActionButtons();
   bg.width = cap.pxW;
   bg.height = cap.pxH;

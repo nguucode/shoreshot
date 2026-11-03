@@ -6,7 +6,7 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 
 | Area | Details |
 |---|---|
-| Capture | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI). |
+| Capture | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI), or at 1× if you turn that on in Settings. |
 | Rectangle | Tool `R`. Hold `Shift` for a square. Scroll to change the border width (1 to 40px), even while dragging. |
 | Ellipse | Tool `O`. Hold `Shift` for a circle. Scroll to change the border width. |
 | Line | Tool `L`. Scroll to change the stroke width. |
@@ -15,7 +15,9 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 | Color | 8 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). Settings can make `Enter` / the ✓ button do this instead of a plain copy. |
-| Other | `Enter` / ✓ button: copy (or copy + paste, per Settings). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. The tray menu has "Open at login". |
+| Other | `Enter` / ✓ button: copy (or copy + paste, per Settings). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
+| Settings | Tray menu > **Settings…**: capture hotkey, Enter / ✓ = copy and paste, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
+| Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 
 Scroll up = bigger, scroll down = smaller. Trackpad scrolling is accumulated so it doesn't jump too fast.
 
@@ -85,7 +87,7 @@ macOS ties Screen Recording / Accessibility permissions to the app's signature, 
 
 ## Changing the hotkey
 
-Menu bar / tray icon > **Change hotkey…** > click the field > press the new combination. The app registers it right away; if the combination is taken by the system or another app, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** goes back to `⌘⇧X` / `Ctrl+Shift+X`.
+Menu bar / tray icon > **Settings…** > click the hotkey field > press the new combination. The app registers it right away; if the combination is taken by the system or another app, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** goes back to `⌘⇧X` / `Ctrl+Shift+X`.
 
 Settings are stored in `config.json` in the userData folder (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). If the saved hotkey is taken by another app at startup, the Settings window opens automatically.
 

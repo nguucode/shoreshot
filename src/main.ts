@@ -12,6 +12,8 @@ import {
   dialog,
   systemPreferences,
   shell,
+  net,
+  Notification,
   Display,
 } from 'electron';
 import * as path from 'path';
@@ -24,22 +26,27 @@ const run = promisify(execFile);
 
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const BUNDLE_ID = 'biz.ontheshore.shoreshot'; // build.appId in package.json
+const REPO_URL = 'https://github.com/nguucode/shoreshot';
+const UPDATE_CHECK_MS = 12 * 60 * 60 * 1000;
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
   bitmap: Buffer; // raw pixels at full native resolution: no PNG encode/decode
-  bgra: boolean; // desktopCapturer ra BGRA, node-screenshots ra RGBA
+  bgra: boolean; // desktopCapturer gives BGRA, node-screenshots gives RGBA
   pxW: number;
   pxH: number;
   width: number; // display size in CSS px (DIP)
   height: number;
   enterPastes: boolean;
+  retina1x: boolean;
 }
 
 interface Config {
   hotkey: string;
   /** true: Enter / the ✓ button copies, then pastes into the previous app. */
   enterPastes: boolean;
+  /** Export at 1x on Retina / HiDPI displays (half the pixels at 2x) instead of native resolution. */
+  retina1x: boolean;
   /** Whether macOS has already shown its Screen Recording prompt (it only asks once). */
   screenAsked: boolean;
 }
@@ -48,12 +55,13 @@ let tray: Tray | null = null;
 let overlay: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let capturing = false;
-const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false, screenAsked: false };
+const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false, retina1x: false, screenAsked: false };
 let config: Config = { ...DEFAULT_CONFIG };
 let hotkeyActive = false; // whether the current hotkey is registered
 let revealTimer: NodeJS.Timeout | undefined;
 let overlayScale = 1; // scaleFactor of the display the overlay was created on
 let overlayOpen = false; // a capture is in progress (including while the overlay is hidden for the Save dialog)
+let update: { version: string; url: string } | null = null; // newer release on GitHub, if any
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -69,6 +77,8 @@ app.whenReady().then(async () => {
     // The saved hotkey is taken by another app: open Settings so the user can pick another.
     openSettings();
   }
+  setTimeout(() => void checkForUpdate(), 5000);
+  setInterval(() => void checkForUpdate(), UPDATE_CHECK_MS);
 });
 
 // Keep running in the background when the overlay / Settings close.
@@ -85,6 +95,7 @@ async function loadConfig(): Promise<Config> {
     return {
       hotkey: typeof raw.hotkey === 'string' && raw.hotkey ? raw.hotkey : DEFAULT_HOTKEY,
       enterPastes: raw.enterPastes === true,
+      retina1x: raw.retina1x === true,
       screenAsked: raw.screenAsked === true,
     };
   } catch {
@@ -157,21 +168,14 @@ function refreshTray(): void {
   if (!tray) return;
   const keyLabel = hotkeyActive ? prettyHotkey() : 'not set';
   tray.setToolTip(`ShoreShot (${keyLabel})`);
-  const login = app.getLoginItemSettings().openAtLogin;
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Capture screen    ${keyLabel}`, click: () => void startCapture() },
-      { label: 'Change hotkey…', click: () => openSettings() },
+      { label: 'Settings…', click: () => openSettings() },
       { type: 'separator' },
-      {
-        label: 'Open at login',
-        type: 'checkbox',
-        checked: login,
-        click: (item) => {
-          app.setLoginItemSettings({ openAtLogin: item.checked });
-          refreshTray();
-        },
-      },
+      ...(update ? [{ label: `Update to ${update.version}…`, click: () => void showUpdate() }] : []),
+      { label: `About ShoreShot ${app.getVersion()}`, click: () => void shell.openExternal(REPO_URL) },
+      { label: 'Report an issue…', click: () => void shell.openExternal(`${REPO_URL}/issues/new`) },
       { type: 'separator' },
       { label: 'Quit ShoreShot', role: 'quit' },
     ]),
@@ -187,7 +191,7 @@ function openSettings(): void {
   }
   const win = new BrowserWindow({
     width: 440,
-    height: 260,
+    height: 380,
     show: false,
     resizable: false,
     minimizable: false,
@@ -220,6 +224,10 @@ function openSettings(): void {
 }
 
 ipcMain.handle('settings:get', () => ({
+  retina1x: config.retina1x,
+  openAtLogin: app.getLoginItemSettings().openAtLogin,
+  version: app.getVersion(),
+  update: update?.version ?? null,
   hotkey: config.hotkey,
   pretty: prettyHotkey(),
   active: hotkeyActive,
@@ -228,11 +236,79 @@ ipcMain.handle('settings:get', () => ({
   enterPastes: config.enterPastes,
 }));
 
-ipcMain.handle('settings:setEnterPastes', async (_e, value: boolean) => {
-  config.enterPastes = value === true;
+// Checkbox options in Settings. Returns the value actually applied.
+ipcMain.handle('settings:setOption', async (_e, name: string, value: boolean) => {
+  const on = value === true;
+  if (name === 'openAtLogin') {
+    app.setLoginItemSettings({ openAtLogin: on });
+    return app.getLoginItemSettings().openAtLogin;
+  }
+  if (name !== 'enterPastes' && name !== 'retina1x') return false; // only known config keys
+  config[name] = on;
   await saveConfig();
-  return config.enterPastes;
+  return on;
 });
+
+// Links in the Settings footer.
+ipcMain.on('settings:link', (_e, name: string) => {
+  if (name === 'about') void shell.openExternal(REPO_URL);
+  else if (name === 'issues') void shell.openExternal(`${REPO_URL}/issues/new`);
+  else if (name === 'update') void showUpdate();
+});
+
+// ---------- update check ----------
+/** true if version a is newer than b ("0.1.10" > "0.1.9"). */
+function isNewer(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+/** Ask GitHub for the latest release; on a newer one, add a tray item and notify once per version. */
+async function checkForUpdate(): Promise<void> {
+  try {
+    const res = await net.fetch('https://api.github.com/repos/nguucode/shoreshot/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) return;
+    const { tag_name: tag, html_url: url } = (await res.json()) as { tag_name: string; html_url: string };
+    const version = tag.replace(/^v/, '');
+    if (!isNewer(version, app.getVersion()) || update?.version === version) return;
+    update = { version, url };
+    refreshTray();
+    if (Notification.isSupported()) {
+      const n = new Notification({
+        title: 'ShoreShot update available',
+        body: `Version ${version} is out (you have ${app.getVersion()}). Click to update.`,
+      });
+      n.on('click', () => void showUpdate());
+      n.show();
+    }
+  } catch {
+    /* offline: try again on the next check */
+  }
+}
+
+async function showUpdate(): Promise<void> {
+  if (!update) return;
+  const command = isMac
+    ? 'curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash'
+    : 'irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex';
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: 'ShoreShot update',
+    message: `ShoreShot ${update.version} is available`,
+    detail: `You have ${app.getVersion()}. To update, run the install command again in ${isMac ? 'Terminal' : 'PowerShell'}:\n\n${command}\n\nYour settings and permissions are kept.`,
+    buttons: ['Copy command', 'Open release page', 'Later'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (response === 0) clipboard.writeText(command);
+  else if (response === 1) void shell.openExternal(update.url);
+}
 
 // While recording a new hotkey, unregister the current one so pressing it doesn't start a capture.
 ipcMain.on('settings:recording', (_e, recording: boolean) => {
@@ -315,7 +391,7 @@ async function startCapture(): Promise<void> {
     if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
       throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
     }
-    await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes });
+    await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes, retina1x: config.retina1x });
   } catch (err) {
     // Permission was turned off mid-run: explain how to turn it back on instead of erroring.
     if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {

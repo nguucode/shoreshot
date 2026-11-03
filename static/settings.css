@@ -81,3 +81,28 @@ kbd {
   border-radius: 4px;
   font: 500 11px var(--font);
 }
+
+.options { gap: 14px; }
+.hidden { display: none !important; }
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+footer .spacer { flex: 1; }
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.link:hover { text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.link.update { color: var(--ok); font-weight: 600; }

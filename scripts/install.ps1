@@ -89,7 +89,7 @@ try {
 
   Ok "Installed $AppName"
   Write-Host ''
-  Write-Host '  - Default hotkey: Ctrl+Shift+X (change it from the tray icon > Change hotkey...)'
+  Write-Host '  - Default hotkey: Ctrl+Shift+X (change it from the tray icon > Settings...)'
   Write-Host '  - Ctrl+C copies, Ctrl+V copies and pastes into the previous app.'
   Write-Host "  - Uninstall: & ([scriptblock]::Create((irm https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1))) -Uninstall"
   Write-Host ''
