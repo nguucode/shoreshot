@@ -17,33 +17,65 @@ App chụp màn hình + chú thích cho **macOS và Windows** (Electron + TypeSc
 
 Lăn chuột lên = to hơn, lăn xuống = nhỏ hơn. Trackpad được cộng dồn để không nhảy quá nhanh.
 
-## Chạy thử
+## Cài đặt
+
+### Cách 1: một dòng lệnh
+
+**macOS** (mở Terminal):
+```bash
+curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.sh | bash
+```
+
+**Windows** (mở PowerShell, không cần quyền Admin):
+```powershell
+irm https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.ps1 | iex
+```
+
+Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshort/releases), cài rồi mở app. Chưa có release phù hợp thì script tự build từ source (lúc đó cần git + Node.js 18+).
+
+| Việc | macOS | Windows |
+|---|---|---|
+| Cài vào | `/Applications` (không ghi được thì `~/Applications`) | `%LOCALAPPDATA%\Programs\ShoreShot` |
+| Ép build từ source | `... \| bash -s -- --from-source` | `& ([scriptblock]::Create((irm <url>))) -FromSource` |
+| Gỡ | `... \| bash -s -- --uninstall` | `& ([scriptblock]::Create((irm <url>))) -Uninstall` |
+
+Chạy lại lệnh cài là cập nhật lên bản mới nhất.
+
+### Cách 2: tải file cài
+
+Vào [Releases](https://github.com/nguucode/shoreshort/releases/latest), tải:
+- Mac Apple Silicon (M1 trở lên): `ShoreShot-x.y.z-mac-arm64.dmg`
+- Mac Intel: `ShoreShot-x.y.z-mac-x64.dmg`
+- Windows: `ShoreShot-Setup-x.y.z.exe`
+
+App chưa ký số (code signing):
+- **macOS** báo "is damaged" hoặc "cannot be opened": chạy `xattr -cr /Applications/ShoreShot.app` rồi mở lại. (Cài bằng Cách 1 thì không gặp lỗi này.)
+- **Windows** SmartScreen cảnh báo: bấm More info > Run anyway.
+
+### macOS: quyền cần cấp
+
+- **Screen Recording**: lần chụp đầu macOS sẽ hỏi. Bật ShoreShot trong System Settings > Privacy & Security > Screen & System Audio Recording, rồi thoát hẳn và mở lại app.
+- **Accessibility**: chỉ cần nếu dùng `⌘V` tự dán vào app khác.
+
+## Phát triển
 
 Cần Node.js 18+.
 
 ```bash
+git clone https://github.com/nguucode/shoreshort.git && cd shoreshort
 npm install
-npm start
+npm start          # chạy dev (macOS: cấp quyền Screen Recording cho app "Electron")
+npm run dist:mac   # build .dmg + .zip trên Mac
+npm run dist:win   # build .exe trên Windows
 ```
 
-Sau đó bấm phím tắt hoặc click icon trên thanh menu/khay.
+### Phát hành bản mới
 
-### macOS: quyền Screen Recording
-
-Lần đầu chụp, macOS hỏi quyền. Vào **System Settings > Privacy & Security > Screen & System Audio Recording**, bật app (khi chạy `npm start` thì app tên là **Electron**), rồi **thoát hẳn và mở lại**. Chưa cấp quyền thì app sẽ hiện hộp thoại dẫn tới đúng trang cài đặt.
-
-## Đóng gói file cài
-
+Tăng `version` trong `package.json`, commit, rồi:
 ```bash
-npm run dist:mac   # chạy trên Mac  -> release/ShoreShot-x.y.z-arm64.dmg (+ x64)
-npm run dist:win   # chạy trên Windows -> release/ShoreShot Setup x.y.z.exe
+git tag v0.1.1 && git push origin v0.1.1
 ```
-
-electron-builder chỉ build `.dmg` trên macOS. Không có máy Windows thì dùng GitHub Actions có sẵn trong `.github/workflows/build.yml`: push lên GitHub, tạo tag `v0.1.0` (hoặc bấm Run workflow), tải file cài ở mục Artifacts.
-
-Bản build chưa ký số (code signing):
-- **macOS**: lần đầu mở, chuột phải vào app > Open. Mỗi lần build lại có thể phải cấp lại quyền Screen Recording.
-- **Windows**: SmartScreen cảnh báo, bấm More info > Run anyway.
+GitHub Actions (`.github/workflows/build.yml`) build trên macOS + Windows rồi tự tạo Release kèm file `.dmg`, `.zip`, `.exe`. Script cài đặt luôn lấy release mới nhất.
 
 ## Đổi phím tắt
 
@@ -67,6 +99,7 @@ src/preload.ts           cầu nối IPC an toàn (contextIsolation + sandbox)
 src/renderer/editor.ts   overlay chọn vùng + vẽ chú thích (canvas)
 src/renderer/settings.ts cửa sổ Cài đặt: ghi phím tắt, hành động của Enter
 static/                  HTML/CSS cho overlay và Cài đặt
+scripts/install.sh|.ps1  cài/gỡ bằng terminal (macOS/Windows)
 assets/                  icon tray
 build/icon.png           icon app (electron-builder tự convert sang .icns/.ico)
 ```
