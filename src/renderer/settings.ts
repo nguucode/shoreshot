@@ -1,16 +1,21 @@
-// Settings window: capture hotkey, options (Retina 1x, open at login), version + links.
+// Settings window: capture hotkeys (area / full screen / window), options (Retina 1x, open at login), version + links.
 // Wrapped in an IIFE so its globals don't clash with editor.ts.
 (() => {
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-  const field = el<HTMLButtonElement>('hotkeyField');
   const msg = el<HTMLParagraphElement>('msg');
-  const resetBtn = el<HTMLButtonElement>('btnReset');
   const isMac = navigator.platform.toLowerCase().includes('mac');
+  const MODES: ShoreShotMode[] = ['area', 'full', 'window'];
+  const fields = Object.fromEntries(
+    MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`)!]),
+  ) as Record<ShoreShotMode, HTMLButtonElement>;
+  const resets = Object.fromEntries(
+    MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-reset="${m}"]`)!]),
+  ) as Record<ShoreShotMode, HTMLButtonElement>;
 
-  let current = '';
-  let currentPretty = ''; // main already returns the display form, no extra IPC
-  let defaultHotkey = '';
-  let recording = false;
+  // main already returns the display form (pretty), no extra IPC
+  let hotkeys = {} as ShoreShotSettings['hotkeys'];
+  let defaults = {} as ShoreShotSettings['defaults'];
+  let recording: ShoreShotMode | null = null;
 
   // KeyboardEvent.code -> Electron Accelerator key name.
   // Uses `code` (physical key position) so it doesn't depend on the input method / keyboard layout.
@@ -60,36 +65,38 @@
   }
 
   function showCurrent(): void {
-    field.textContent = current ? currentPretty : 'Not set';
-    resetBtn.disabled = current === defaultHotkey;
+    for (const m of MODES) {
+      fields[m].textContent = hotkeys[m].hotkey ? hotkeys[m].pretty : 'Not set';
+      fields[m].classList.toggle('unset', !hotkeys[m].hotkey);
+      resets[m].disabled = hotkeys[m].hotkey === defaults[m];
+    }
   }
 
-  function startRecording(): void {
-    if (recording) return;
-    recording = true;
+  function startRecording(mode: ShoreShotMode): void {
+    stopRecording();
+    recording = mode;
     window.api.settings.setRecording(true);
-    field.classList.add('recording');
-    field.textContent = 'Press a key combination…';
+    fields[mode].classList.add('recording');
+    fields[mode].textContent = 'Press keys…';
     setMsg('Esc to cancel. Needs at least one modifier (Ctrl, Alt, Shift, ⌘/Win), except F1 to F24 and PrintScreen.');
   }
 
   function stopRecording(): void {
     if (!recording) return;
-    recording = false;
-    field.classList.remove('recording');
+    fields[recording].classList.remove('recording');
+    recording = null;
     window.api.settings.setRecording(false);
     showCurrent();
   }
 
-  async function apply(accel: string): Promise<void> {
-    recording = false;
-    field.classList.remove('recording');
-    field.textContent = 'Saving…';
-    const res = await window.api.settings.setHotkey(accel);
+  async function apply(mode: ShoreShotMode, accel: string): Promise<void> {
+    recording = null;
+    fields[mode].classList.remove('recording');
+    fields[mode].textContent = 'Saving…';
+    const res = await window.api.settings.setHotkey(mode, accel);
     if (res.ok) {
-      current = res.hotkey;
-      currentPretty = res.pretty;
-      setMsg(`Saved. Press ${res.pretty} anywhere to capture.`, 'ok');
+      hotkeys[mode] = { hotkey: res.hotkey, pretty: res.pretty, active: !!res.hotkey };
+      setMsg(res.hotkey ? `Saved. Press ${res.pretty} anywhere to capture.` : 'Hotkey cleared.', 'ok');
     } else {
       setMsg(res.error, 'error');
     }
@@ -97,11 +104,15 @@
     showCurrent();
   }
 
-  field.addEventListener('click', () => (recording ? stopRecording() : startRecording()));
-  field.addEventListener('blur', stopRecording);
+  for (const m of MODES) {
+    fields[m].addEventListener('click', () => (recording === m ? stopRecording() : startRecording(m)));
+    fields[m].addEventListener('blur', stopRecording);
+    resets[m].addEventListener('click', () => void apply(m, defaults[m]));
+  }
 
   window.addEventListener('keydown', (e) => {
     if (!recording) return;
+    const field = fields[recording];
     e.preventDefault();
     e.stopPropagation();
     if (e.code === 'Escape' && !modifiers(e).length) {
@@ -111,7 +122,7 @@
     }
     const mods = modifiers(e);
     if (isModifier(e)) {
-      field.textContent = prettyLive(mods) || 'Press a key combination…';
+      field.textContent = prettyLive(mods) || 'Press keys…';
       return;
     }
     const key = keyFromCode(e.code);
@@ -126,16 +137,14 @@
       return;
     }
     field.textContent = prettyLive(mods, key);
-    void apply([...mods, key].join('+'));
+    void apply(recording, [...mods, key].join('+'));
   });
 
   window.addEventListener('keyup', (e) => {
     if (recording && isModifier(e)) {
-      field.textContent = prettyLive(modifiers(e)) || 'Press a key combination…';
+      fields[recording].textContent = prettyLive(modifiers(e)) || 'Press keys…';
     }
   });
-
-  resetBtn.addEventListener('click', () => void apply(defaultHotkey));
 
   // Checkbox options: id = option name in main. The message under the hotkey confirms the change.
   const OPTIONS = {
@@ -156,9 +165,8 @@
 
   async function boot(): Promise<void> {
     const s = await window.api.settings.get();
-    current = s.hotkey;
-    currentPretty = s.pretty;
-    defaultHotkey = s.defaultHotkey;
+    hotkeys = s.hotkeys;
+    defaults = s.defaults;
     for (const name of ['retina1x', 'openAtLogin'] as const) el<HTMLInputElement>(name).checked = s[name];
     el('version').textContent = `ShoreShot ${s.version}`;
     if (s.update) {
@@ -166,10 +174,11 @@
       el('linkUpdate').classList.remove('hidden');
     }
     showCurrent();
-    if (!s.active) {
-      setMsg(`${s.pretty} is used by another app, so it isn't active. Click the field above to pick another.`, 'error');
+    const blocked = MODES.find((m) => hotkeys[m].hotkey && !hotkeys[m].active);
+    if (blocked) {
+      setMsg(`${hotkeys[blocked].pretty} is used by another app, so it isn't active. Click its field to pick another.`, 'error');
     } else {
-      setMsg('Click the field above, then press a new key combination.');
+      setMsg('Click a field, then press a new key combination.');
     }
   }
   void boot();

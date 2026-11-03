@@ -53,7 +53,16 @@ async function prepareCaptureLog(): Promise<void> {
 }
 const isMac = process.platform === 'darwin';
 
+type Mode = 'area' | 'full' | 'window';
+const MODES: Mode[] = ['area', 'full', 'window'];
+const DEFAULT_HOTKEYS: Record<Mode, string> = { area: DEFAULT_HOTKEY, full: '', window: '' }; // '' = not set
+const MODE_LABEL: Record<Mode, string> = { area: 'Capture area', full: 'Capture full screen', window: 'Capture window' };
+
+interface Box { x: number; y: number; w: number; h: number }
+
 interface CapturePayload {
+  mode: Mode;
+  cursor: { x: number; y: number }; // CSS px within the display
   bitmap: Buffer; // raw pixels at full native resolution: no PNG encode/decode
   bgra: boolean; // desktopCapturer gives BGRA, node-screenshots gives RGBA
   pxW: number;
@@ -64,7 +73,7 @@ interface CapturePayload {
 }
 
 interface Config {
-  hotkey: string;
+  hotkeys: Record<Mode, string>;
   /** Export at 1x on Retina / HiDPI displays (half the pixels at 2x) instead of native resolution. */
   retina1x: boolean;
   /** Whether macOS has already shown its Screen Recording prompt (it only asks once). */
@@ -75,9 +84,10 @@ let tray: Tray | null = null;
 let overlay: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let capturing = false;
-const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, retina1x: false, screenAsked: false };
-let config: Config = { ...DEFAULT_CONFIG };
-let hotkeyActive = false; // whether the current hotkey is registered
+const defaultConfig = (): Config => ({ hotkeys: { ...DEFAULT_HOTKEYS }, retina1x: false, screenAsked: false });
+let config: Config = defaultConfig();
+const active: Record<Mode, boolean> = { area: false, full: false, window: false }; // hotkey registered
+let windowsFor: Display | null = null; // window capture: list the windows once the overlay is visible
 let revealTimer: NodeJS.Timeout | undefined;
 let overlayScale = 1; // scaleFactor of the display the overlay was created on
 let overlayOpen = false; // a capture is in progress (including while the overlay is hidden for the Save dialog)
@@ -91,11 +101,11 @@ app.whenReady().then(async () => {
   if (isMac) app.dock?.hide();
   config = await loadConfig();
   void prepareCaptureLog();
-  hotkeyActive = registerHotkey(config.hotkey);
+  registerAll();
   createTray();
   overlay = createOverlay(screen.getPrimaryDisplay()); // created up front so the hotkey shows it instantly
-  if (!hotkeyActive) {
-    // The saved hotkey is taken by another app: open Settings so the user can pick another.
+  if (MODES.some((m) => config.hotkeys[m] && !active[m])) {
+    // A saved hotkey is taken by another app: open Settings so the user can pick another.
     openSettings();
   }
   setTimeout(() => void checkForUpdate(), 5000);
@@ -105,21 +115,25 @@ app.whenReady().then(async () => {
 // Keep running in the background when the overlay / Settings close.
 app.on('window-all-closed', () => {});
 app.on('will-quit', () => globalShortcut.unregisterAll());
-app.on('second-instance', () => void startCapture());
+app.on('second-instance', () => startCapture('area'));
 
 // ---------- config ----------
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 
 async function loadConfig(): Promise<Config> {
   try {
-    const raw = JSON.parse(await fs.readFile(configPath(), 'utf8')) as Partial<Config>;
+    const raw = JSON.parse(await fs.readFile(configPath(), 'utf8')) as Partial<Config> & { hotkey?: unknown };
+    const saved = (raw.hotkeys ?? {}) as Partial<Record<Mode, unknown>>;
+    if (saved.area === undefined) saved.area = raw.hotkey; // 0.1.11 and older: a single "hotkey"
+    const hotkeys = { ...DEFAULT_HOTKEYS };
+    for (const m of MODES) if (typeof saved[m] === 'string') hotkeys[m] = saved[m] as string;
     return {
-      hotkey: typeof raw.hotkey === 'string' && raw.hotkey ? raw.hotkey : DEFAULT_HOTKEY,
+      hotkeys,
       retina1x: raw.retina1x === true,
       screenAsked: raw.screenAsked === true,
     };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return defaultConfig();
   }
 }
 
@@ -129,37 +143,46 @@ async function saveConfig(): Promise<void> {
 }
 
 // ---------- hotkey ----------
-function registerHotkey(accel: string): boolean {
+function registerHotkey(mode: Mode, accel: string): boolean {
+  if (!accel) return false; // not set
   try {
-    return globalShortcut.register(accel, () => void startCapture());
+    return globalShortcut.register(accel, () => startCapture(mode));
   } catch {
     return false; // invalid accelerator syntax
   }
 }
 
+function registerAll(): void {
+  for (const m of MODES) if (!active[m]) active[m] = registerHotkey(m, config.hotkeys[m]);
+}
+
 type SetHotkeyResult = { ok: true; hotkey: string } | { ok: false; error: string };
 
-async function setHotkey(accel: string): Promise<SetHotkeyResult> {
-  const old = config.hotkey;
-  if (accel === old && hotkeyActive) return { ok: true, hotkey: old };
+/** accel '' clears the hotkey. */
+async function setHotkey(mode: Mode, accel: string): Promise<SetHotkeyResult> {
+  const old = config.hotkeys[mode];
+  if (accel === old && (active[mode] || !accel)) return { ok: true, hotkey: old };
+  const taken = MODES.find((m) => m !== mode && accel && config.hotkeys[m] === accel);
+  if (taken) return { ok: false, error: `${prettyHotkey(accel)} is already used for ${MODE_LABEL[taken]}.` };
   // Only unregister when registered: a hand-edited config may hold an invalid accelerator and unregister would throw.
-  if (hotkeyActive) globalShortcut.unregister(old);
-  if (!registerHotkey(accel)) {
-    hotkeyActive = registerHotkey(old); // restore the old hotkey
+  if (active[mode]) globalShortcut.unregister(old);
+  active[mode] = false;
+  if (accel && !registerHotkey(mode, accel)) {
+    active[mode] = registerHotkey(mode, old); // restore the old hotkey
     return {
       ok: false,
       error: `${prettyHotkey(accel)} is already used by the system or another app. Pick another combination.`,
     };
   }
-  hotkeyActive = true;
-  config.hotkey = accel;
+  active[mode] = !!accel;
+  config.hotkeys[mode] = accel;
   await saveConfig();
   refreshTray();
   return { ok: true, hotkey: accel };
 }
 
 /** Show an accelerator the way each OS does: ⌘⇧X on Mac, Ctrl+Shift+X on Windows. */
-function prettyHotkey(accel: string = config.hotkey): string {
+function prettyHotkey(accel: string): string {
   const mac: Record<string, string> = {
     CommandOrControl: '⌘', CmdOrCtrl: '⌘', Command: '⌘', Cmd: '⌘', Super: '⌘', Meta: '⌘',
     Control: '⌃', Ctrl: '⌃', Alt: '⌥', Option: '⌥', Shift: '⇧',
@@ -181,16 +204,16 @@ function createTray(): void {
   tray = new Tray(icon);
   refreshTray();
   // Windows: left-clicking the tray icon captures right away.
-  if (!isMac) tray.on('click', () => void startCapture());
+  if (!isMac) tray.on('click', () => startCapture('area'));
 }
 
 function refreshTray(): void {
   if (!tray) return;
-  const keyLabel = hotkeyActive ? prettyHotkey() : 'not set';
-  tray.setToolTip(`ShoreShot (${keyLabel})`);
+  const keyLabel = (m: Mode) => (active[m] ? `    ${prettyHotkey(config.hotkeys[m])}` : '');
+  tray.setToolTip(`ShoreShot${active.area ? ` (${prettyHotkey(config.hotkeys.area)})` : ''}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Capture screen    ${keyLabel}`, click: () => void startCapture() },
+      ...MODES.map((m) => ({ label: `${MODE_LABEL[m]}${keyLabel(m)}`, click: () => startCapture(m) })),
       { label: 'Settings…', click: () => openSettings() },
       { type: 'separator' },
       ...(update ? [{ label: `Update to ${update.version}…`, click: () => void showUpdate() }] : []),
@@ -211,7 +234,7 @@ function openSettings(): void {
   }
   const win = new BrowserWindow({
     width: 440,
-    height: 300,
+    height: 410,
     show: false,
     resizable: false,
     minimizable: false,
@@ -236,8 +259,8 @@ function openSettings(): void {
   });
   win.on('closed', () => {
     settingsWin = null;
-    // Window closed while recording a hotkey: re-register the current one.
-    if (!hotkeyActive) hotkeyActive = registerHotkey(config.hotkey);
+    registerAll(); // window closed while recording a hotkey
+
     refreshTray();
   });
   void win.loadFile(path.join(__dirname, '../static/settings.html'));
@@ -248,11 +271,10 @@ ipcMain.handle('settings:get', () => ({
   openAtLogin: app.getLoginItemSettings().openAtLogin,
   version: app.getVersion(),
   update: update?.version ?? null,
-  hotkey: config.hotkey,
-  pretty: prettyHotkey(),
-  active: hotkeyActive,
-  defaultHotkey: DEFAULT_HOTKEY,
-  platform: process.platform,
+  hotkeys: Object.fromEntries(
+    MODES.map((m) => [m, { hotkey: config.hotkeys[m], pretty: prettyHotkey(config.hotkeys[m]), active: active[m] }]),
+  ),
+  defaults: DEFAULT_HOTKEYS,
 }));
 
 // Checkbox options in Settings. Returns the value actually applied.
@@ -329,18 +351,16 @@ async function showUpdate(): Promise<void> {
   else if (response === 1) void shell.openExternal(update.url);
 }
 
-// While recording a new hotkey, unregister the current one so pressing it doesn't start a capture.
+// While recording a new hotkey, unregister them all so pressing one doesn't start a capture.
 ipcMain.on('settings:recording', (_e, recording: boolean) => {
-  if (recording) {
-    if (hotkeyActive) globalShortcut.unregister(config.hotkey);
-    hotkeyActive = false;
-  } else if (!hotkeyActive) {
-    hotkeyActive = registerHotkey(config.hotkey);
-  }
+  if (!recording) return registerAll();
+  globalShortcut.unregisterAll();
+  for (const m of MODES) active[m] = false;
 });
 
-ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
-  const res = await setHotkey(accel);
+ipcMain.handle('settings:setHotkey', async (_e, mode: Mode, accel: string) => {
+  if (!MODES.includes(mode) || typeof accel !== 'string') return { ok: false, error: 'Invalid hotkey.' };
+  const res = await setHotkey(mode, accel);
   return res.ok ? { ...res, pretty: prettyHotkey(res.hotkey) } : res;
 });
 
@@ -394,7 +414,7 @@ const resetPermission = (service: 'ScreenCapture' | 'Accessibility') =>
  * for the next Node event (measured in capture.log at the first await). Only the rare paths go async:
  * no permission yet, the desktopCapturer fallback, an overlay that is still loading.
  */
-function startCapture(): void {
+function startCapture(mode: Mode): void {
   if (overlayOpen) {
     overlay?.focus();
     return;
@@ -402,8 +422,9 @@ function startCapture(): void {
   if (capturing) return;
   captureT0 = performance.now();
   marks = [];
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  mark('display');
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  mark(`display ${mode}`);
   if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
     void ensureMacPermission();
     return;
@@ -416,26 +437,28 @@ function startCapture(): void {
     // Native module failed / no binary for this machine: desktopCapturer is async, accept the cost.
     capturing = true;
     grabDesktopCapturer(display)
-      .then((s) => showShot(display, s))
+      .then((s) => showShot(display, s, mode, cursor))
       .catch(captureFailed)
       .finally(() => (capturing = false));
     return;
   }
   try {
-    showShot(display, shot);
+    showShot(display, shot, mode, cursor);
   } catch (err) {
     captureFailed(err);
   }
 }
 
-function showShot(display: Display, shot: Shot): void {
+function showShot(display: Display, shot: Shot, mode: Mode, cursor: Electron.Point): void {
   mark(`captured ${shot.pxW}x${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
   if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
     throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
   }
-  const { width, height } = display.bounds;
+  const { x, y, width, height } = display.bounds;
+  windowsFor = mode === 'window' ? display : null;
+  const local = { x: cursor.x - x, y: cursor.y - y };
   // With the overlay already loaded, showCapture runs synchronously (it only awaits a loading page).
-  showCapture(display, { ...shot, width, height, retina1x: config.retina1x }).catch(captureFailed);
+  showCapture(display, { ...shot, mode, cursor: local, width, height, retina1x: config.retina1x }).catch(captureFailed);
 }
 
 function captureFailed(err: unknown): void {
@@ -567,7 +590,44 @@ function reveal(win: BrowserWindow): void {
   clearTimeout(revealTimer);
   if (!win.isDestroyed()) win.setOpacity(1);
   mark('visible');
+  if (windowsFor && !win.isDestroyed()) {
+    // Listing windows costs ~50 ms on macOS (every getter re-queries the window server), so it runs
+    // after the overlay is visible instead of between the hotkey and the overlay.
+    win.webContents.send('capture:windows', listWindows(windowsFor, win));
+    windowsFor = null;
+    mark('windows');
+  }
   flushMarks();
+}
+
+/**
+ * Windows on the display, front to back, in CSS px relative to the display. Skips the overlay itself,
+ * slivers (menu bar items, the menu bar) and windows covering the whole display (Dock, desktop),
+ * so clicking empty desktop still means the whole screen.
+ */
+function listWindows(display: Display, overlayWin: BrowserWindow): Box[] {
+  try {
+    const { Window } = require('node-screenshots') as typeof import('node-screenshots');
+    const own = Number(overlayWin.getMediaSourceId().split(':')[1]);
+    const d = display.bounds;
+    const out: Box[] = [];
+    for (const w of Window.all()) {
+      if (w.id() === own) continue;
+      const raw = { x: w.x(), y: w.y(), width: w.width(), height: w.height() };
+      // macOS reports points (= DIP); Windows reports physical pixels.
+      const r = isMac ? raw : screen.screenToDipRect(null, raw);
+      const x1 = Math.max(r.x, d.x);
+      const y1 = Math.max(r.y, d.y);
+      const x2 = Math.min(r.x + r.width, d.x + d.width);
+      const y2 = Math.min(r.y + r.height, d.y + d.height);
+      if (x2 - x1 < 40 || y2 - y1 < 40) continue;
+      if (x2 - x1 >= d.width && y2 - y1 >= d.height) continue;
+      out.push({ x: x1 - d.x, y: y1 - d.y, w: x2 - x1, h: y2 - y1 });
+    }
+    return out;
+  } catch {
+    return []; // no native module: window capture falls back to area selection
+  }
 }
 
 function showOverlay(win: BrowserWindow): void {
@@ -581,6 +641,7 @@ function showOverlay(win: BrowserWindow): void {
 /** Hide instead of close so the next capture skips window creation. The renderer frees the image on 'capture:hidden'. */
 function hideOverlay(win: BrowserWindow | null): void {
   overlayOpen = false;
+  windowsFor = null;
   if (!win || win.isDestroyed()) return;
   clearTimeout(revealTimer);
   win.setOpacity(0);

@@ -23,6 +23,7 @@ const SIZE_STEP: Record<Tool, number> = { rect: 1, ellipse: 1, line: 1, pen: 1, 
 const SIZE_LABEL: Record<Tool, string> = { rect: 'Border', ellipse: 'Border', line: 'Stroke', pen: 'Stroke', text: 'Font size' };
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const LINE_HEIGHT = 1.2;
+const TEXT_PAD = 8; // frame around the text being typed: drag it to move the text
 
 const ed = {
   phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'exporting',
@@ -45,6 +46,9 @@ const ed = {
   hudTimer: 0 as number,
   barSize: null as { w: number; h: number } | null, // toolbar + hint have a fixed size, measured once
   resize: null as { edge: Edge; start: Box } | null, // dragging an edge/corner of the selection
+  textMove: null as Pt | null, // dragging the text box by its frame: offset from its top-left
+  windows: [] as Box[], // window capture: window frames, front to back (empty otherwise)
+  mouse: { x: 0, y: 0 } as Pt,
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -65,6 +69,8 @@ const colorInput = $<HTMLInputElement>('colorCustom');
 const sizeReadout = $<HTMLSpanElement>('sizeReadout');
 const btnUndo = $<HTMLButtonElement>('btnUndo');
 const colorWrap = $('colorCustomWrap');
+const HINT = hint.textContent!;
+const WINDOW_HINT = 'Click a window · Drag to select an area · Esc to exit';
 
 /** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips and the hint use {mod}. */
 const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
@@ -224,12 +230,14 @@ function positionToolbar(): void {
   const { w: tw, h: th } = ed.barSize;
   const s = norm(ed.selection);
   const gap = 8;
-  let y = s.y + s.h + gap;
-  if (y + th > ed.viewH - 4) y = s.y - th - gap;
-  if (y < 4) y = s.y + s.h - th - gap;
-  const x = clamp(s.x + s.w - tw, 4, ed.viewW - tw - 4);
+  // Vertical toolbar to the right of the selection; else to its left; else inside its right edge.
+  let x = s.x + s.w + gap;
+  if (x + tw > ed.viewW - 4) x = s.x - tw - gap;
+  if (x < 4) x = s.x + s.w - tw - gap;
+  x = clamp(x, 4, ed.viewW - tw - 4);
+  const y = clamp(s.y, 4, ed.viewH - th - 4);
   actionsEl.style.transform = `translate(${x}px, ${y}px)`;
-  toolbarEl.classList.toggle('tips-below', y < 40);
+  toolbarEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
 }
 
 /** Fit #stage and #draft to the selection (called on entering editing). Drawing coordinates stay in screen CSS px. */
@@ -279,7 +287,8 @@ function syncToolbar(): void {
   colorInput.value = ed.color;
   colorWrap.style.setProperty('--c', ed.color);
   const t = activeSizeTool();
-  sizeReadout.textContent = `${SIZE_LABEL[t]} ${ed.sizes[t]}`;
+  sizeReadout.textContent = String(ed.sizes[t]);
+  sizeReadout.dataset.tip = `${SIZE_LABEL[t]} ${ed.sizes[t]}px · scroll to change`;
   btnUndo.disabled = ed.shapes.length === 0;
   document.body.style.cursor = baseCursor();
 }
@@ -325,11 +334,16 @@ function openText(x: number, y: number, original: TextShape | null): void {
   }
   textInput.value = original?.text ?? '';
   textInput.classList.remove('hidden');
-  textInput.style.left = `${x}px`;
-  textInput.style.top = `${y}px`;
+  placeText();
   applyTextStyle();
   syncToolbar();
   requestAnimationFrame(() => textInput.focus());
+}
+
+/** The textarea's padding is the draggable frame, so the text itself sits at (x, y). */
+function placeText(): void {
+  textInput.style.left = `${ed.textEdit!.x - TEXT_PAD}px`;
+  textInput.style.top = `${ed.textEdit!.y - TEXT_PAD}px`;
 }
 
 function applyTextStyle(): void {
@@ -345,8 +359,8 @@ function autosizeText(): void {
   const s = norm(ed.selection!);
   textInput.style.width = '1px';
   textInput.style.height = '1px';
-  const maxW = s.x + s.w - ed.textEdit.x;
-  textInput.style.width = `${Math.min(Math.max(textInput.scrollWidth + 4, ed.sizes.text), Math.max(maxW, 40))}px`;
+  const maxW = s.x + s.w - ed.textEdit.x + 2 * TEXT_PAD;
+  textInput.style.width = `${Math.min(Math.max(textInput.scrollWidth + 4, ed.sizes.text + 2 * TEXT_PAD), Math.max(maxW, 40))}px`;
   textInput.style.height = `${textInput.scrollHeight}px`;
 }
 
@@ -355,6 +369,7 @@ function commitText(): void {
   const text = textInput.value.replace(/\s+$/, '');
   const { x, y } = ed.textEdit;
   ed.textEdit = null;
+  ed.textMove = null;
   textInput.classList.add('hidden');
   textInput.blur();
   if (text.trim()) pushShape({ kind: 'text', x, y, text, color: ed.color, size: ed.sizes.text });
@@ -365,6 +380,7 @@ function cancelText(): void {
   if (!ed.textEdit) return;
   const original = ed.textEdit.original;
   ed.textEdit = null;
+  ed.textMove = null;
   textInput.classList.add('hidden');
   if (original) {
     ed.shapes.push(original); // restore the original text when editing was cancelled
@@ -441,6 +457,29 @@ function requestPaste(e?: KeyboardEvent): void {
   void act(window.api.copyPaste);
 }
 
+/** Window capture: the frontmost window under p. */
+const windowAt = (p: Pt) => ed.windows.find((w) => inBox(p, w)) ?? null;
+
+/** Window capture, before any click: frame the window under the mouse. */
+function hoverWindow(): void {
+  if (ed.phase !== 'selecting' || ed.selStart || !ed.windows.length) return;
+  const w = windowAt(ed.mouse);
+  if (w === ed.selection) return;
+  ed.selection = w;
+  layout();
+}
+
+/** Selection done: start annotating. */
+function enterEditing(s: Box): void {
+  ed.selection = s;
+  ed.selStart = null;
+  ed.phase = 'editing';
+  hint.classList.add('hidden');
+  setupLayers();
+  syncToolbar();
+  layout();
+}
+
 function startSelecting(p: Pt): void {
   ed.phase = 'selecting';
   ed.shapes = [];
@@ -512,6 +551,16 @@ window.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mousemove', (e) => {
   const p = pt(e);
+  ed.mouse = p;
+  if (ed.textMove && ed.textEdit) {
+    const s = norm(ed.selection!);
+    ed.textEdit.x = clamp(p.x - ed.textMove.x, s.x, s.x + s.w - 10);
+    ed.textEdit.y = clamp(p.y - ed.textMove.y, s.y, s.y + s.h - 10);
+    placeText();
+    autosizeText();
+    return;
+  }
+  hoverWindow();
   if (ed.phase === 'selecting' && ed.selStart && ed.selection) {
     const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
     ed.selection = { x: ed.selStart.x, y: ed.selStart.y, w: q.x - ed.selStart.x, h: q.y - ed.selStart.y };
@@ -560,16 +609,15 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
+  if (ed.textMove) {
+    ed.textMove = null;
+    textInput.focus();
+    return;
+  }
   if (ed.phase === 'selecting' && ed.selStart) {
-    let s = norm(ed.selection!);
-    // Click without dragging = whole screen.
-    if (s.w < 5 || s.h < 5) s = { x: 0, y: 0, w: ed.viewW, h: ed.viewH };
-    ed.selection = s;
-    ed.selStart = null;
-    ed.phase = 'editing';
-    setupLayers();
-    syncToolbar();
-    layout();
+    const s = norm(ed.selection!);
+    // Click without dragging = the window under the mouse (window capture) or the whole screen.
+    enterEditing(s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? { x: 0, y: 0, w: ed.viewW, h: ed.viewH } : s);
     return;
   }
   if (ed.resize) {
@@ -656,7 +704,18 @@ textInput.addEventListener('keydown', (e) => {
     commitText();
   }
 });
-textInput.addEventListener('mousedown', (e) => e.stopPropagation());
+const onTextFrame = (e: MouseEvent) =>
+  e.offsetX < TEXT_PAD || e.offsetY < TEXT_PAD ||
+  e.offsetX > textInput.clientWidth - TEXT_PAD || e.offsetY > textInput.clientHeight - TEXT_PAD;
+textInput.addEventListener('mousedown', (e) => {
+  e.stopPropagation();
+  if (e.button !== 0 || !ed.textEdit || !onTextFrame(e)) return; // inside: place the caret as usual
+  e.preventDefault(); // keep the caret and focus while moving
+  ed.textMove = { x: e.clientX - ed.textEdit.x, y: e.clientY - ed.textEdit.y };
+});
+textInput.addEventListener('mousemove', (e) => {
+  textInput.style.cursor = ed.textMove || onTextFrame(e) ? 'move' : 'text';
+});
 
 window.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
@@ -709,7 +768,9 @@ colorInput.addEventListener('change', () => {
 /** Back to idle and free the image memory. Tool, color and sizes carry over between captures. */
 function reset(): void {
   ed.phase = 'loading';
-  ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = ed.resize = null;
+  ed.selection = ed.selStart = ed.draft = ed.draftStart = ed.textEdit = ed.resize = ed.textMove = null;
+  ed.windows = [];
+  hint.textContent = HINT;
   ed.shapes = [];
   ed.redo = [];
   ed.pendingPaste = false;
@@ -730,9 +791,15 @@ window.api.onCapture((cap) => {
   bg.width = cap.pxW;
   bg.height = cap.pxH;
   bgCtx.putImageData(toImageData(cap.bitmap, cap.pxW, cap.pxH, cap.bgra), 0, 0);
+  ed.mouse = cap.cursor;
   ed.phase = 'selecting';
-  syncToolbar();
-  layout();
+  if (cap.mode === 'full') {
+    enterEditing({ x: 0, y: 0, w: cap.width, h: cap.height });
+  } else {
+    if (cap.mode === 'window') hint.textContent = WINDOW_HINT;
+    syncToolbar();
+    layout();
+  }
   // Main shows the window transparent first; reveal it once the new image has been painted (next frame).
   // macOS may treat an opacity-0 window as occluded and pause frames, so report after 50 ms regardless.
   let sent = false;
@@ -745,3 +812,9 @@ window.api.onCapture((cap) => {
   setTimeout(ready, 50);
 });
 window.api.onHidden(reset);
+// Window capture: main sends the window frames right after the overlay becomes visible.
+window.api.onWindows((windows) => {
+  if (ed.phase === 'loading') return;
+  ed.windows = windows;
+  hoverWindow();
+});

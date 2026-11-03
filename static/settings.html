@@ -8,11 +8,22 @@
 </head>
 <body>
   <main>
-    <section>
-      <label class="label" for="hotkeyField">Capture hotkey</label>
+    <section class="hotkeys">
+      <span class="label">Hotkeys</span>
       <div class="row">
-        <button id="hotkeyField" class="hotkey" type="button"></button>
-        <button id="btnReset" class="ghost" type="button">Default</button>
+        <span>Capture area</span>
+        <button class="hotkey" data-mode="area" type="button"></button>
+        <button class="ghost" data-reset="area" type="button">Default</button>
+      </div>
+      <div class="row">
+        <span>Capture full screen</span>
+        <button class="hotkey" data-mode="full" type="button"></button>
+        <button class="ghost" data-reset="full" type="button">Clear</button>
+      </div>
+      <div class="row">
+        <span>Capture window</span>
+        <button class="hotkey" data-mode="window" type="button"></button>
+        <button class="ghost" data-reset="window" type="button">Clear</button>
       </div>
       <p id="msg" class="msg" aria-live="polite"></p>
     </section>
