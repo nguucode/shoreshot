@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShoreShot – screenshot and annotate for macOS and Windows</title>
+<meta name="description" content="Capture an area, a window or the full screen, mark it up, and paste it where you were working. Free, light, one hotkey. macOS and Windows.">
+<meta property="og:title" content="ShoreShot – screenshot and annotate">
+<meta property="og:description" content="Capture, mark up, paste. Free and light, for macOS and Windows.">
+<meta property="og:image" content="https://shoreshot.ontheshore.biz/shot.png">
+<link rel="icon" href="icon.png">
+<style>
+:root {
+  --bg: #fff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --soft: #f3f4f6;
+  --accent: #2563eb; --code-bg: #111827; --code-fg: #f9fafb;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0b0d12; --fg: #f3f4f6; --muted: #9ca3af; --line: #1f2937; --soft: #151922; --code-bg: #000; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+header.top { border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--fg); }
+.brand img { width: 24px; height: 24px; }
+nav a { color: var(--muted); margin-left: 20px; font-size: 14px; }
+
+.hero { display: grid; grid-template-columns: 1fr 1.15fr; gap: 48px; align-items: center; padding: 64px 0 56px; }
+.hero > * { min-width: 0; }
+.hero .icon { width: 72px; height: 72px; }
+h1 { font-size: 48px; line-height: 1.1; margin: 16px 0 4px; letter-spacing: -0.02em; }
+.tagline { font-size: 20px; color: var(--muted); margin: 0 0 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 24px; padding: 0; list-style: none; }
+.chips li { font-size: 13px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.tabs button { font: 500 13px var(--font); padding: 6px 12px; border-radius: 8px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--soft); color: var(--fg); }
+.cmd { display: flex; align-items: center; gap: 8px; background: var(--code-bg); color: var(--code-fg); border-radius: 10px; padding: 12px 12px 12px 16px; }
+.cmd code { flex: 1; font: 13px var(--mono); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+.cmd code::before { content: "$ "; color: #6b7280; }
+.cmd button { flex: none; font: 500 12px var(--font); padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; cursor: pointer; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.dl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.btn { display: inline-flex; align-items: center; font: 500 14px var(--font); padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--fg); }
+.btn:hover { text-decoration: none; background: var(--soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #1d4ed8; }
+.shot { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0,0,0,.18); display: block; }
+
+section { padding: 56px 0; border-top: 1px solid var(--line); }
+h2 { font-size: 28px; margin: 0 0 28px; letter-spacing: -0.01em; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.card h3 { font-size: 16px; margin: 0 0 6px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+kbd { font: 12px var(--mono); padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--soft); color: var(--fg); white-space: nowrap; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 13px; }
+td:first-child { width: 40%; }
+
+details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+details:first-of-type { border-top: 1px solid var(--line); }
+summary { cursor: pointer; font-weight: 500; }
+details p, details pre { color: var(--muted); font-size: 15px; margin: 10px 0 0; }
+details pre { font: 13px var(--mono); background: var(--soft); color: var(--fg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.faq { max-width: 760px; }
+
+footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+footer a { color: var(--muted); margin-right: 16px; }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; padding-top: 40px; gap: 32px; }
+  .grid { grid-template-columns: 1fr 1fr; }
+  h1 { font-size: 40px; }
+}
+@media (max-width: 560px) {
+  .grid { grid-template-columns: 1fr; }
+  nav a:not(:last-child) { display: none; }
+  td:first-child { width: auto; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="icon.png" alt="">ShoreShot</a>
+    <nav><a href="#features">Features</a><a href="#shortcuts">Shortcuts</a><a href="#faq">FAQ</a><a href="https://github.com/nguucode/shoreshot">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <img class="icon" src="icon.png" alt="ShoreShot icon">
+      <h1>ShoreShot</h1>
+      <p class="tagline">Screenshot and annotate for macOS and Windows</p>
+      <p>Press one hotkey, drag over what you need, mark it up with boxes, circles, lines, text and a pen, then copy it or paste it straight back into the app you were using. ShoreShot sits in the menu bar and opens in a blink.</p>
+      <ul class="chips"><li>Free</li><li>Open source</li><li>No account</li><li>Nothing leaves your computer</li><li>macOS 11+ · Windows 10+</li></ul>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-os="mac">macOS</button>
+        <button role="tab" aria-selected="false" data-os="win">Windows</button>
+      </div>
+      <div class="cmd"><code id="cmd">curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash</code><button id="copyCmd" type="button">Copy</button></div>
+      <p class="note" id="cmdNote">Open Terminal and run the command above. Run it again any time to update. <span id="ver"></span></p>
+      <div class="dl">
+        <a class="btn primary" id="dlMacArm" href="https://github.com/nguucode/shoreshot/releases/latest">Mac · Apple Silicon</a>
+        <a class="btn" id="dlMacX64" href="https://github.com/nguucode/shoreshot/releases/latest">Mac · Intel</a>
+        <a class="btn" id="dlWin" href="https://github.com/nguucode/shoreshot/releases/latest">Windows</a>
+      </div>
+    </div>
+    <img class="shot" src="shot.png" width="2200" height="1260" alt="ShoreShot editing a capture: a selected area with a red box and text, the tools bar and the actions bar on its right">
+  </div>
+
+  <section id="features">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="card"><h3>Area, window or full screen</h3><p>Drag to select an area, click a window to frame it, or grab the whole display. Each mode can have its own hotkey.</p></div>
+      <div class="card"><h3>Fast to open</h3><p>The capture window is ready before you press the hotkey, so it appears the moment you ask for it.</p></div>
+      <div class="card"><h3>Mark it up</h3><p>Rectangle, ellipse, line, pen and text in six colors or any custom one. Scroll to change the stroke or font size.</p></div>
+      <div class="card"><h3>Paste where you were</h3><p><kbd>⌘V</kbd> copies the capture and pastes it into the app you came from: Slack, Telegram, Figma, an email.</p></div>
+      <div class="card"><h3>Fix mistakes</h3><p>Hover a shape and press <kbd>⌫</kbd> or right-click to delete it. Undo and redo everything. Click text to edit it.</p></div>
+      <div class="card"><h3>Sharp on Retina</h3><p>Exports at native resolution, or at 1× when you want smaller files. Saves PNG to your Pictures folder.</p></div>
+      <div class="card"><h3>Adjust after drawing</h3><p>Drag an edge or a corner of the selection to resize it, even after you have started annotating.</p></div>
+      <div class="card"><h3>Private</h3><p>No account, no upload, no tracking. The only network call checks GitHub for a new version.</p></div>
+      <div class="card"><h3>Install with one line</h3><p>One command installs, updates or removes the app on macOS and Windows. ShoreShot tells you when an update is out.</p></div>
+    </div>
+  </section>
+
+  <section id="shortcuts">
+    <h2>Shortcuts</h2>
+    <table>
+      <thead><tr><th>Action</th><th>macOS · Windows</th></tr></thead>
+      <tbody>
+        <tr><td>Capture an area</td><td><kbd>⌘⇧X</kbd> · <kbd>Ctrl+Shift+X</kbd> (change it in Settings)</td></tr>
+        <tr><td>Capture full screen / a window</td><td>Assign a hotkey in Settings, or use the tray menu</td></tr>
+        <tr><td>Rectangle, ellipse, line, text, pen</td><td><kbd>R</kbd> <kbd>O</kbd> <kbd>L</kbd> <kbd>T</kbd> <kbd>P</kbd> · hold <kbd>Shift</kbd> for a square or circle</td></tr>
+        <tr><td>Copy</td><td><kbd>⌘C</kbd> or <kbd>Enter</kbd> · <kbd>Ctrl+C</kbd></td></tr>
+        <tr><td>Copy and paste into the previous app</td><td><kbd>⌘V</kbd> · <kbd>Ctrl+V</kbd></td></tr>
+        <tr><td>Save PNG</td><td><kbd>⌘S</kbd> · <kbd>Ctrl+S</kbd></td></tr>
+        <tr><td>Undo / redo</td><td><kbd>⌘Z</kbd> <kbd>⌘⇧Z</kbd> · <kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></td></tr>
+        <tr><td>Delete the shape under the cursor</td><td><kbd>⌫</kbd> or right-click · <kbd>Delete</kbd> or right-click</td></tr>
+        <tr><td>Close</td><td><kbd>Esc</kbd></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <div class="faq">
+      <details><summary>Is ShoreShot free?</summary><p>Yes. It is free and open source under the MIT license. There is no paid tier and no account.</p></details>
+      <details><summary>Why does macOS ask for Screen Recording?</summary><p>macOS requires it for any app that reads the screen. Turn on ShoreShot in System Settings › Privacy &amp; Security › Screen &amp; System Audio Recording, then choose “Quit &amp; Reopen”. If you dismissed the prompt, the next capture shows a button that opens that page.</p></details>
+      <details><summary>Why does it ask for Accessibility?</summary><p>Only for <kbd>⌘V</kbd>, which pastes into another app for you. Copy, save and everything else work without it. Without the permission ShoreShot still copies the image and tells you to press <kbd>⌘V</kbd> yourself.</p></details>
+      <details><summary>macOS says the app “is damaged” or “cannot be opened”</summary><p>The app is not notarized by Apple. The install command avoids this. If you downloaded the .dmg, run this once and open the app again:</p><pre>xattr -cr /Applications/ShoreShot.app</pre></details>
+      <details><summary>Windows shows a SmartScreen warning</summary><p>The installer is not code-signed. Click More info › Run anyway, or use the PowerShell command, which installs without the warning.</p></details>
+      <details><summary>How do I change the hotkeys?</summary><p>Click the ShoreShot icon in the menu bar or tray › Settings…, click the field next to a capture mode and press the new combination. If another app already uses it, ShoreShot says so and keeps the old one.</p></details>
+      <details><summary>How do I update?</summary><p>Run the install command again. ShoreShot checks for a new version at startup and every 12 hours and shows a notification when one is out.</p></details>
+      <details><summary>How do I uninstall?</summary><p>macOS:</p><pre>curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash -s -- --uninstall</pre><p>Windows (PowerShell):</p><pre>&amp; ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -Uninstall</pre></details>
+      <details><summary>Does it capture more than one display?</summary><p>One display per capture: the one under the mouse cursor.</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div><a href="https://github.com/nguucode/shoreshot">Source code</a><a href="https://github.com/nguucode/shoreshot/releases">Releases</a><a href="https://github.com/nguucode/shoreshot/issues/new">Report an issue</a></div>
+    <div>ShoreShot · MIT license</div>
+  </div>
+</footer>
+
+<script>
+const CMD = {
+  mac: ['curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash', 'Open Terminal and run the command above.'],
+  win: ['irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex', 'Open PowerShell (no Admin needed) and run the command above.'],
+};
+const cmd = document.getElementById('cmd'), note = document.getElementById('cmdNote'), ver = document.getElementById('ver');
+function setOs(os) {
+  document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.os === os));
+  cmd.textContent = CMD[os][0];
+  note.firstChild.textContent = CMD[os][1] + ' Run it again any time to update. ';
+}
+document.querySelector('.tabs').onclick = (e) => { if (e.target.dataset.os) setOs(e.target.dataset.os); };
+if (/Windows/.test(navigator.userAgent)) setOs('win');
+document.getElementById('copyCmd').onclick = async (e) => {
+  await navigator.clipboard.writeText(cmd.textContent);
+  e.target.textContent = 'Copied';
+  setTimeout(() => (e.target.textContent = 'Copy'), 1500);
+};
+// Direct download links and the version line come from the latest GitHub release; the links fall back to the Releases page.
+fetch('https://api.github.com/repos/nguucode/shoreshot/releases/latest').then((r) => r.json()).then((rel) => {
+  const asset = (re) => rel.assets.find((a) => re.test(a.name));
+  for (const [id, re] of [['dlMacArm', /mac-arm64\.dmg$/], ['dlMacX64', /mac-x64\.dmg$/], ['dlWin', /\.exe$/]]) {
+    const a = asset(re);
+    if (a) document.getElementById(id).href = a.browser_download_url;
+  }
+  ver.textContent = `Latest version ${rel.tag_name} (${rel.published_at.slice(0, 10)}).`;
+}).catch(() => {});
+</script>
+</body>
+</html>
