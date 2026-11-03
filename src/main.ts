@@ -256,11 +256,13 @@ ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
  */
 async function ensureMacPermission(): Promise<boolean> {
   if (!isMac || systemPreferences.getMediaAccessStatus('screen') === 'granted') return true;
+  // Always request a capture first: that is what puts ShoreShot in the Screen Recording list
+  // (after a reset or a signature change it isn't there), and macOS prompts again if it can.
+  // Without permission this call fails: ignore it.
+  await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
   if (!config.screenAsked) {
     config.screenAsked = true;
     await saveConfig();
-    // Try a capture so macOS shows its prompt. Without permission this call fails: ignore it.
-    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
     return false;
   }
   const { response } = await dialog.showMessageBox({
