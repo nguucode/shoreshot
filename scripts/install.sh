@@ -80,9 +80,10 @@ quit_app
 rm -rf "$DEST"
 ditto "$APP_SRC" "$DEST"
 
-# The app isn't signed with an Apple Developer ID: drop the quarantine flag and sign ad-hoc so macOS (especially Apple Silicon) runs it.
+# The app isn't signed with an Apple Developer ID: drop the quarantine flag so macOS opens it.
+# Don't re-sign here: releases carry a fixed signature, which is what keeps Screen Recording /
+# Accessibility permissions across updates.
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-codesign --force --deep --sign - "$DEST" >/dev/null 2>&1 || true
 
 ok "Installed $APP_NAME to $DEST"
 echo

@@ -57,6 +57,7 @@ The app is not code-signed:
 
 - **Screen Recording**: macOS asks on the first capture. Turn on ShoreShot in System Settings > Privacy & Security > Screen & System Audio Recording, then choose "Quit & Reopen". If you dismissed the macOS prompt, the next capture shows a dialog with a button that opens that settings page.
 - **Accessibility**: only needed for `⌘V` to paste into other apps.
+- Releases are signed with a fixed ShoreShot certificate, so these permissions survive updates. If ShoreShot shows as allowed but capture or paste still fails (e.g. after updating from 0.1.5 or older, which were signed ad-hoc), choose **Reset permission** in ShoreShot's permission dialog and allow it again. From a terminal: `tccutil reset ScreenCapture biz.ontheshore.shoreshot`.
 
 ## Development
 
@@ -77,6 +78,10 @@ Bump `version` in `package.json`, commit, then either:
 - Or from a terminal: `git tag v0.1.3 && git push origin v0.1.3`
 
 GitHub Actions (`.github/workflows/build.yml`) builds on macOS + Windows and creates the Release with the `.dmg`, `.zip`, `.exe` files. The install scripts always pick the latest release.
+
+#### macOS signing certificate
+
+macOS ties Screen Recording / Accessibility permissions to the app's signature, so every release must be signed with the same certificate (`scripts/after-pack.js`). The build reads it from two repository secrets: `MAC_CERT_P12` (base64 of a `.p12` holding a self-signed code-signing certificate whose name contains "ShoreShot") and `MAC_CERT_PASSWORD`. Without them the build falls back to ad-hoc signing, and users get asked for permissions again after every update. Keep the `.p12` safe: a new certificate also resets everyone's permissions once.
 
 ## Changing the hotkey
 
