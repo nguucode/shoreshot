@@ -1,11 +1,17 @@
 name: build
 
-# Push tag v* (vd: v0.1.0) -> build macOS + Windows -> đăng GitHub Release.
-# Bấm "Run workflow" thủ công -> chỉ build, file nằm ở mục Artifacts.
+# Phát hành: push tag v* (vd: v0.1.0), HOẶC vào tab Actions > build > Run workflow > tick "release".
+#   -> build macOS + Windows -> tạo GitHub Release (tag = v + version trong package.json).
+# Run workflow không tick "release" -> chỉ build, file nằm ở mục Artifacts.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Tạo GitHub Release (tag v<version trong package.json>)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -42,10 +48,18 @@ jobs:
             release/*.exe
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -53,6 +67,8 @@ jobs:
       - run: ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
           body: |

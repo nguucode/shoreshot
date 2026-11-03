@@ -71,10 +71,10 @@ npm run dist:win   # build .exe trên Windows
 
 ### Phát hành bản mới
 
-Tăng `version` trong `package.json`, commit, rồi:
-```bash
-git tag v0.1.1 && git push origin v0.1.1
-```
+Tăng `version` trong `package.json`, commit, rồi chọn một trong hai:
+- Trên GitHub: tab **Actions** > **build** > **Run workflow** > tick **release** > Run.
+- Hoặc terminal: `git tag v0.1.1 && git push origin v0.1.1`
+
 GitHub Actions (`.github/workflows/build.yml`) build trên macOS + Windows rồi tự tạo Release kèm file `.dmg`, `.zip`, `.exe`. Script cài đặt luôn lấy release mới nhất.
 
 ## Đổi phím tắt
