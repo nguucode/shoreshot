@@ -73,7 +73,11 @@ npm run dist:mac   # build .dmg + .zip on a Mac
 npm run dist:win   # build .exe on Windows
 ```
 
-To see how long each capture stage takes, start the app from a terminal with `SHORESHOT_TIMING=1`, e.g. `SHORESHOT_TIMING=1 /Applications/ShoreShot.app/Contents/MacOS/ShoreShot`.
+To see how long each capture step takes, quit ShoreShot and start it with `open` (not by running the binary directly: macOS would then treat Terminal as the app recording the screen):
+
+```bash
+open --env SHORESHOT_TIMING=1 --stdout /tmp/shoreshot-timing.log /Applications/ShoreShot.app && tail -f /tmp/shoreshot-timing.log
+```
 
 ### Releasing a new version
 

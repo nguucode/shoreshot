@@ -379,8 +379,10 @@ async function startCapture(): Promise<void> {
   try {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = display.bounds;
+    mark('display');
 
     if (!(await ensureMacPermission())) return;
+    mark('permission check');
 
     let shot: Shot;
     try {
@@ -413,13 +415,16 @@ type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
  */
 async function grabNative(display: Display): Promise<Shot> {
   const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
+  mark('  load node-screenshots');
   const { x, y, width, height } = display.bounds;
   // macOS: id equals Electron's CGDirectDisplayID. Windows: ids differ, so look up by the display's center (physical coordinates).
   const center = { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
   const p = isMac ? center : screen.dipToScreenPoint(center);
   const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
   if (!monitor) throw new Error('Display not found');
+  mark('  find monitor');
   const img = await monitor.captureImage();
+  mark('  captureImage');
   // Size mismatch = wrong display: let the fallback handle it.
   const sf = display.scaleFactor;
   if (Math.abs(img.width - width * sf) > 2 || Math.abs(img.height - height * sf) > 2) {
