@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="editor.css" />
 </head>
 <body>
-  <canvas id="stage"></canvas>
+  <canvas id="bg"></canvas>
+  <canvas id="stage" class="layer hidden"></canvas>
+  <canvas id="draft" class="layer hidden"></canvas>
+  <div id="sel" class="sel empty"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="sizeBadge" class="badge hidden"></div>
   <div id="hint" class="hint">Kéo để chọn vùng · Click để chụp cả màn hình · Esc để thoát</div>
   <textarea id="textInput" class="hidden" spellcheck="false" wrap="off" rows="1"></textarea>
