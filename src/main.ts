@@ -388,45 +388,64 @@ async function ensureMacPermission(): Promise<boolean> {
 const resetPermission = (service: 'ScreenCapture' | 'Accessibility') =>
   run('tccutil', ['reset', service, BUNDLE_ID]).catch(() => undefined);
 
-async function startCapture(): Promise<void> {
+/**
+ * Hotkey -> overlay. Synchronous on purpose up to showing the overlay: the hotkey callback comes from
+ * native code, and in Electron's main process a promise continuation started there can wait 1-2.5 s
+ * for the next Node event (measured in capture.log at the first await). Only the rare paths go async:
+ * no permission yet, the desktopCapturer fallback, an overlay that is still loading.
+ */
+function startCapture(): void {
   if (overlayOpen) {
     overlay?.focus();
     return;
   }
   if (capturing) return;
-  capturing = true;
   captureT0 = performance.now();
-  try {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const { width, height } = display.bounds;
-    mark('display');
-
-    if (!(await ensureMacPermission())) return;
-    mark('permission');
-
-    let shot: Shot;
-    try {
-      shot = await grabNative(display);
-    } catch {
-      shot = await grabDesktopCapturer(display); // native module failed / no binary for this machine
-    }
-    mark(`captured ${shot.pxW}x${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
-    if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
-      throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
-    }
-    await showCapture(display, { ...shot, width, height, retina1x: config.retina1x });
-  } catch (err) {
-    // Permission was turned off mid-run: explain how to turn it back on instead of erroring.
-    if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-      await ensureMacPermission();
-      return;
-    }
-    dialog.showErrorBox('ShoreShot', `Capture failed: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    capturing = false;
-    if (!overlayOpen) flushMarks(); // nothing shown (no permission / error): log what we have
-
+  marks = [];
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  mark('display');
+  if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+    void ensureMacPermission();
+    return;
   }
+  mark('permission');
+  let shot: Shot;
+  try {
+    shot = grabNative(display);
+  } catch {
+    // Native module failed / no binary for this machine: desktopCapturer is async, accept the cost.
+    capturing = true;
+    grabDesktopCapturer(display)
+      .then((s) => showShot(display, s))
+      .catch(captureFailed)
+      .finally(() => (capturing = false));
+    return;
+  }
+  try {
+    showShot(display, shot);
+  } catch (err) {
+    captureFailed(err);
+  }
+}
+
+function showShot(display: Display, shot: Shot): void {
+  mark(`captured ${shot.pxW}x${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
+  if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
+    throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
+  }
+  const { width, height } = display.bounds;
+  // With the overlay already loaded, showCapture runs synchronously (it only awaits a loading page).
+  showCapture(display, { ...shot, width, height, retina1x: config.retina1x }).catch(captureFailed);
+}
+
+function captureFailed(err: unknown): void {
+  if (!overlayOpen) flushMarks(); // nothing shown: log what we have
+  // Permission was turned off mid-run: explain how to turn it back on instead of erroring.
+  if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+    void ensureMacPermission();
+    return;
+  }
+  dialog.showErrorBox('ShoreShot', `Capture failed: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
@@ -435,7 +454,7 @@ type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
  * Capture just one display with node-screenshots (RGBA output). desktopCapturer renders every display
  * at full resolution even though one is used. Required at runtime: a missing binary falls back instead of crashing the app.
  */
-async function grabNative(display: Display): Promise<Shot> {
+function grabNative(display: Display): Shot {
   const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
   mark('module');
   const { x, y, width, height } = display.bounds;
@@ -445,9 +464,7 @@ async function grabNative(display: Display): Promise<Shot> {
   const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
   if (!monitor) throw new Error('Display not found');
   mark('monitor');
-  // Synchronous on purpose: the async captureImage runs on the libuv threadpool, and in normal use
-  // that work sometimes started 0.8-4 s late (hotkey to capture). Blocking the main thread for
-  // ~110 ms is fine here, the overlay isn't shown yet.
+  // Synchronous (see startCapture). Blocks the main thread ~110 ms; the overlay isn't shown yet.
   const img = monitor.captureImageSync();
   mark('capture');
   // Size mismatch = wrong display: let the fallback handle it.
