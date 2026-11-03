@@ -43,7 +43,7 @@ const ed = {
   enterPastes: false, // Enter / ✓ button = copy + auto-paste
   pendingPaste: false, // wait for all modifiers to be released before pasting
   hudTimer: 0 as number,
-  barSize: null as { w: number; h: number } | null, // the toolbar has a fixed size, measured once
+  barSize: null as { w: number; h: number } | null, // toolbar + hint have a fixed size, measured once
   resize: null as { edge: Edge; start: Box } | null, // dragging an edge/corner of the selection
 };
 
@@ -55,6 +55,7 @@ const stage = $<HTMLCanvasElement>('stage');
 const ctx = stage.getContext('2d')!;
 const draftCv = $<HTMLCanvasElement>('draft');
 const draftCtx = draftCv.getContext('2d')!;
+const actionsEl = $<HTMLDivElement>('actions'); // toolbar + hint, positioned together
 const toolbarEl = $<HTMLDivElement>('toolbar');
 const sizeBadge = $<HTMLDivElement>('sizeBadge');
 const hud = $<HTMLDivElement>('hud');
@@ -206,11 +207,11 @@ function layout(): void {
 
 function positionToolbar(): void {
   if (ed.phase !== 'editing' || !ed.selection) {
-    toolbarEl.classList.add('hidden');
+    actionsEl.classList.add('hidden');
     return;
   }
-  toolbarEl.classList.remove('hidden');
-  ed.barSize ??= { w: toolbarEl.offsetWidth, h: toolbarEl.offsetHeight };
+  actionsEl.classList.remove('hidden');
+  ed.barSize ??= { w: actionsEl.offsetWidth, h: actionsEl.offsetHeight };
   const { w: tw, h: th } = ed.barSize;
   const s = norm(ed.selection);
   const gap = 8;
@@ -218,7 +219,7 @@ function positionToolbar(): void {
   if (y + th > ed.viewH - 4) y = s.y - th - gap;
   if (y < 4) y = s.y + s.h - th - gap;
   const x = clamp(s.x + s.w - tw, 4, ed.viewW - tw - 4);
-  toolbarEl.style.transform = `translate(${x}px, ${y}px)`;
+  actionsEl.style.transform = `translate(${x}px, ${y}px)`;
   toolbarEl.classList.toggle('tips-below', y < 40);
 }
 
@@ -718,12 +719,7 @@ function setupActionButtons(): void {
   const secondary = $<HTMLButtonElement>('btnSecondary');
   primary.dataset.tip = `${ed.enterPastes ? pasteTitle : copyTitle} · Enter`;
   secondary.dataset.tip = ed.enterPastes ? copyTitle : pasteTitle;
-  // Hint under the toolbar: what Enter does and which key copies then auto-pastes.
-  const paste = 'copy and paste into the previous app';
-  $('pasteHint').innerHTML = ed.enterPastes
-    ? `<kbd>Enter</kbd> ${paste} · <kbd>${m}C</kbd> copy only`
-    : `<kbd>Enter</kbd> copy · <kbd>${m}V</kbd> ${paste}`;
-  ed.barSize = null; // the hint text follows the setting, so re-measure the toolbar
+  $('pasteHint').innerHTML = `<kbd>${m}C</kbd> to copy · <kbd>${m}V</kbd> to paste`;
   secondary.setAttribute('aria-label', ed.enterPastes ? 'Copy' : 'Copy and paste');
   secondary.innerHTML = ed.enterPastes ? ICON_COPY : ICON_PASTE;
 }
