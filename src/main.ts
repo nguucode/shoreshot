@@ -39,13 +39,16 @@ interface Config {
   hotkey: string;
   /** true: Enter / nút ✓ sẽ copy rồi tự dán vào app trước đó. */
   enterPastes: boolean;
+  /** macOS đã tự hỏi quyền Screen Recording chưa (macOS chỉ hỏi 1 lần). */
+  screenAsked: boolean;
 }
 
 let tray: Tray | null = null;
 let overlay: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let capturing = false;
-let config: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false };
+const DEFAULT_CONFIG: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false, screenAsked: false };
+let config: Config = { ...DEFAULT_CONFIG };
 let hotkeyActive = false; // phím tắt hiện có đang đăng ký thành công không
 let revealTimer: NodeJS.Timeout | undefined;
 let overlayScale = 1; // scaleFactor của màn hình lúc tạo overlay
@@ -81,9 +84,10 @@ async function loadConfig(): Promise<Config> {
     return {
       hotkey: typeof raw.hotkey === 'string' && raw.hotkey ? raw.hotkey : DEFAULT_HOTKEY,
       enterPastes: raw.enterPastes === true,
+      screenAsked: raw.screenAsked === true,
     };
   } catch {
-    return { hotkey: DEFAULT_HOTKEY, enterPastes: false };
+    return { ...DEFAULT_CONFIG };
   }
 }
 
@@ -244,18 +248,29 @@ ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
   return res.ok ? { ...res, pretty: prettyHotkey(res.hotkey) } : res;
 });
 
+/**
+ * macOS: chưa có quyền Screen Recording thì xin quyền, không báo lỗi.
+ * Lần đầu để macOS tự hỏi (hộp thoại hệ thống có sẵn nút mở System Settings). macOS chỉ hỏi
+ * 1 lần, nên từ lần sau app tự mở hộp thoại hướng dẫn bật quyền.
+ */
 async function ensureMacPermission(): Promise<boolean> {
-  if (!isMac) return true;
-  const status = systemPreferences.getMediaAccessStatus('screen');
-  if (status === 'granted') return true;
+  if (!isMac || systemPreferences.getMediaAccessStatus('screen') === 'granted') return true;
+  if (!config.screenAsked) {
+    config.screenAsked = true;
+    await saveConfig();
+    // Thử chụp để macOS bật hộp thoại xin quyền. Chưa có quyền thì lệnh này lỗi: bỏ qua.
+    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
+    return false;
+  }
   const { response } = await dialog.showMessageBox({
-    type: 'warning',
+    type: 'info',
     title: 'ShoreShot cần quyền ghi màn hình',
-    message: 'Chưa có quyền Screen Recording',
+    message: 'Cho phép ShoreShot ghi màn hình để chụp ảnh',
     detail:
-      'Vào System Settings > Privacy & Security > Screen & System Audio Recording, bật ShoreShot, rồi mở lại app.',
+      'Mở System Settings > Privacy & Security > Screen & System Audio Recording, bật ShoreShot. macOS sẽ hỏi mở lại app, chọn "Quit & Reopen" rồi bấm phím tắt chụp lại.',
     buttons: ['Mở System Settings', 'Để sau'],
     defaultId: 0,
+    cancelId: 1,
   });
   if (response === 0) {
     await shell.openExternal(
@@ -276,11 +291,7 @@ async function startCapture(): Promise<void> {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = display.bounds;
 
-    if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-      // Gọi getSources để macOS bật hộp thoại xin quyền lần đầu.
-      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
-      if (!(await ensureMacPermission())) return;
-    }
+    if (!(await ensureMacPermission())) return;
 
     let shot: Shot;
     try {
@@ -293,7 +304,12 @@ async function startCapture(): Promise<void> {
     }
     await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes });
   } catch (err) {
-    dialog.showErrorBox('ShoreShot', `Lỗi khi chụp: ${(err as Error).message}`);
+    // Quyền bị tắt giữa chừng: hướng dẫn bật lại thay vì báo lỗi.
+    if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      await ensureMacPermission();
+      return;
+    }
+    dialog.showErrorBox('ShoreShot', `Lỗi khi chụp: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     capturing = false;
   }
