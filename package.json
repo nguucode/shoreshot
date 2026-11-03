@@ -1,7 +1,7 @@
 {
   "name": "shoreshot",
   "productName": "ShoreShot",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Cross-platform screenshot + annotate (rect, text, pen) for Windows and macOS",
   "main": "dist/main.js",
   "author": "Ngưu Nguyễn",
@@ -25,6 +25,7 @@
   },
   "build": {
     "appId": "biz.ontheshore.shoreshot",
+    "afterPack": "scripts/after-pack.js",
     "productName": "ShoreShot",
     "directories": {
       "buildResources": "build",
@@ -37,6 +38,7 @@
       "package.json"
     ],
     "mac": {
+      "identity": null,
       "target": [
         {
           "target": "dmg",

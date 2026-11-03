@@ -23,6 +23,7 @@ import { setTimeout as sleep } from 'timers/promises';
 const run = promisify(execFile);
 
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
+const BUNDLE_ID = 'biz.ontheshore.shoreshot'; // build.appId in package.json
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
@@ -267,18 +268,28 @@ async function ensureMacPermission(): Promise<boolean> {
     title: 'ShoreShot needs Screen Recording permission',
     message: 'Allow ShoreShot to record the screen to take screenshots',
     detail:
-      'Open System Settings > Privacy & Security > Screen & System Audio Recording and turn on ShoreShot. When macOS asks to reopen the app, choose "Quit & Reopen", then press the hotkey again.',
-    buttons: ['Open System Settings', 'Later'],
+      'Open System Settings > Privacy & Security > Screen & System Audio Recording and turn on ShoreShot. When macOS asks to reopen the app, choose "Quit & Reopen", then press the hotkey again.\n\nShoreShot is already on but capture still fails? Choose Reset permission and allow it again.',
+    buttons: ['Open System Settings', 'Reset permission', 'Later'],
     defaultId: 0,
-    cancelId: 1,
+    cancelId: 2,
   });
   if (response === 0) {
     await shell.openExternal(
       'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
     );
+  } else if (response === 1) {
+    // ShoreShot shows as allowed but capture still fails: macOS holds a grant for an older
+    // signature. Drop it and let macOS ask again.
+    await resetPermission('ScreenCapture');
+    config.screenAsked = false;
+    return ensureMacPermission();
   }
   return false;
 }
+
+/** Remove this app's macOS privacy grant so macOS asks again. Errors (e.g. in dev, other bundle id) are ignored. */
+const resetPermission = (service: 'ScreenCapture' | 'Accessibility') =>
+  run('tccutil', ['reset', service, BUNDLE_ID]).catch(() => undefined);
 
 async function startCapture(): Promise<void> {
   if (overlayOpen) {
@@ -466,13 +477,20 @@ ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
     hideOverlay(win);
     app.hide();
     systemPreferences.isTrustedAccessibilityClient(true); // shows the macOS permission prompt
-    await dialog.showMessageBox({
+    const { response } = await dialog.showMessageBox({
       type: 'info',
       title: 'ShoreShot',
       message: 'Image copied, but it could not be pasted automatically',
       detail:
-        'To auto-paste, allow ShoreShot in System Settings > Privacy & Security > Accessibility, then reopen the app. For now, press ⌘V to paste.',
+        'To auto-paste, allow ShoreShot in System Settings > Privacy & Security > Accessibility, then reopen the app. For now, press ⌘V to paste.\n\nShoreShot is already on but pasting still fails? Choose Reset permission and allow it again.',
+      buttons: ['OK', 'Reset permission'],
+      defaultId: 0,
+      cancelId: 0,
     });
+    if (response === 1) {
+      await resetPermission('Accessibility');
+      systemPreferences.isTrustedAccessibilityClient(true);
+    }
     return false;
   }
 
