@@ -76,5 +76,8 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "${productName}-Setup-${version}.${ext}"
     }
+  },
+  "dependencies": {
+    "node-screenshots": "^0.2.8"
   }
 }

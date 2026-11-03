@@ -82,8 +82,9 @@ const place = (el: HTMLElement, b: Box) => {
   el.style.height = `${b.h}px`;
 };
 
-/** Bitmap BGRA của Chromium (mac + win, little-endian) -> ImageData RGBA: đổi chỗ kênh R và B. */
-function bgraToImageData(bitmap: Uint8Array, w: number, h: number): ImageData {
+/** Bitmap thô -> ImageData. RGBA dùng thẳng; BGRA (Chromium, little-endian) thì đổi chỗ kênh R và B. */
+function toImageData(bitmap: Uint8Array, w: number, h: number, bgra: boolean): ImageData {
+  if (!bgra) return new ImageData(new Uint8ClampedArray(bitmap.buffer as ArrayBuffer, bitmap.byteOffset, w * h * 4), w, h);
   const bytes = bitmap.byteOffset % 4 ? bitmap.slice() : bitmap; // Uint32Array cần offset chia hết cho 4
   const src = new Uint32Array(bytes.buffer, bytes.byteOffset, w * h);
   const out = new ImageData(w, h);
@@ -656,7 +657,7 @@ window.api.onCapture((cap) => {
   setupActionButtons();
   bg.width = cap.pxW;
   bg.height = cap.pxH;
-  bgCtx.putImageData(bgraToImageData(cap.bitmap, cap.pxW, cap.pxH), 0, 0);
+  bgCtx.putImageData(toImageData(cap.bitmap, cap.pxW, cap.pxH, cap.bgra), 0, 0);
   ed.phase = 'selecting';
   syncToolbar();
   layout();

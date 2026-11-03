@@ -26,7 +26,8 @@ const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
-  bitmap: Buffer; // BGRA thô, full độ phân giải thật: khỏi encode/decode PNG
+  bitmap: Buffer; // pixel thô, full độ phân giải thật: khỏi encode/decode PNG
+  bgra: boolean; // desktopCapturer ra BGRA, node-screenshots ra RGBA
   pxW: number;
   pxH: number;
   width: number; // kích thước màn hình theo CSS px (DIP)
@@ -274,34 +275,68 @@ async function startCapture(): Promise<void> {
   try {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = display.bounds;
-    const sf = display.scaleFactor;
 
-    // Gọi getSources trước: trên macOS lần đầu sẽ bật hộp thoại xin quyền của hệ thống.
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: Math.round(width * sf), height: Math.round(height * sf) },
-    });
-    if (!(await ensureMacPermission())) return;
-
-    const allIds = screen.getAllDisplays().map((d) => d.id);
-    const source =
-      sources.find((s) => s.display_id === String(display.id)) ??
-      sources[allIds.indexOf(display.id)] ??
-      sources[0];
-    if (!source || source.thumbnail.isEmpty()) {
-      dialog.showErrorBox('ShoreShot', 'Không chụp được màn hình.');
-      return;
+    if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      // Gọi getSources để macOS bật hộp thoại xin quyền lần đầu.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+      if (!(await ensureMacPermission())) return;
     }
-    const img = source.thumbnail;
-    const { width: pxW, height: pxH } = img.getSize();
-    const bitmap = img.toBitmap();
-    if (bitmap.length !== pxW * pxH * 4) throw new Error(`bitmap ${bitmap.length} B không khớp ${pxW}×${pxH}`);
-    await showCapture(display, { bitmap, pxW, pxH, width, height, enterPastes: config.enterPastes });
+
+    let shot: Shot;
+    try {
+      shot = await grabNative(display);
+    } catch {
+      shot = await grabDesktopCapturer(display); // module native lỗi / không có binary cho máy này
+    }
+    if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
+      throw new Error(`bitmap ${shot.bitmap.length} B không khớp ${shot.pxW}×${shot.pxH}`);
+    }
+    await showCapture(display, { ...shot, width, height, enterPastes: config.enterPastes });
   } catch (err) {
     dialog.showErrorBox('ShoreShot', `Lỗi khi chụp: ${(err as Error).message}`);
   } finally {
     capturing = false;
   }
+}
+
+type Shot = Pick<CapturePayload, 'bitmap' | 'pxW' | 'pxH' | 'bgra'>;
+
+/**
+ * Chụp đúng 1 màn hình bằng node-screenshots (ra RGBA). desktopCapturer thì chụp mọi màn
+ * ở full độ phân giải dù chỉ dùng 1. require lúc chạy: thiếu binary cho máy này thì rơi về fallback, không sập app.
+ */
+async function grabNative(display: Display): Promise<Shot> {
+  const { Monitor } = require('node-screenshots') as typeof import('node-screenshots');
+  const { x, y, width, height } = display.bounds;
+  // macOS: id trùng CGDirectDisplayID của Electron. Windows: id khác, tìm theo điểm giữa màn (toạ độ vật lý).
+  const center = { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
+  const p = isMac ? center : screen.dipToScreenPoint(center);
+  const monitor = Monitor.all().find((m) => m.id() === display.id) ?? Monitor.fromPoint(p.x, p.y);
+  if (!monitor) throw new Error('Không tìm thấy màn hình');
+  const img = await monitor.captureImage();
+  // Lệch kích thước = chọn nhầm màn: để fallback xử lý cho chắc.
+  const sf = display.scaleFactor;
+  if (Math.abs(img.width - width * sf) > 2 || Math.abs(img.height - height * sf) > 2) {
+    throw new Error(`Ảnh ${img.width}×${img.height} không khớp màn hình`);
+  }
+  return { bitmap: await img.toRaw(true), pxW: img.width, pxH: img.height, bgra: false };
+}
+
+async function grabDesktopCapturer(display: Display): Promise<Shot> {
+  const { width, height } = display.bounds;
+  const sf = display.scaleFactor;
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: Math.round(width * sf), height: Math.round(height * sf) },
+  });
+  const allIds = screen.getAllDisplays().map((d) => d.id);
+  const source =
+    sources.find((s) => s.display_id === String(display.id)) ??
+    sources[allIds.indexOf(display.id)] ??
+    sources[0];
+  if (!source || source.thumbnail.isEmpty()) throw new Error('Không chụp được màn hình.');
+  const { width: pxW, height: pxH } = source.thumbnail.getSize();
+  return { bitmap: source.thumbnail.toBitmap(), pxW, pxH, bgra: true };
 }
 
 function createOverlay(display: Display): BrowserWindow {

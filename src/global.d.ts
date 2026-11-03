@@ -1,5 +1,6 @@
 interface ShoreShotCapture {
-  bitmap: Uint8Array; // BGRA, pxW × pxH
+  bitmap: Uint8Array; // pxW × pxH pixel, RGBA hoặc BGRA
+  bgra: boolean;
   pxW: number;
   pxH: number;
   width: number; // CSS px (DIP)
