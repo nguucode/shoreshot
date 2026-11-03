@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
+  <title>ShoreShot</title>
+  <link rel="stylesheet" href="editor.css" />
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div id="sizeBadge" class="badge hidden"></div>
+  <div id="hint" class="hint">Kéo để chọn vùng · Click để chụp cả màn hình · Esc để thoát</div>
+  <textarea id="textInput" class="hidden" spellcheck="false" wrap="off" rows="1"></textarea>
+  <div id="hud" class="hud hidden"></div>
+
+  <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Công cụ chú thích">
+    <button data-tool="rect" title="Khung (R)" aria-label="Vẽ khung">
+      <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>
+    </button>
+    <button data-tool="pen" title="Bút vẽ tự do (P)" aria-label="Bút vẽ tự do">
+      <svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2.1 2.1 0 0 0-3-3L5 16l-1 4z"/><path d="M14 7l3 3"/></svg>
+    </button>
+    <button data-tool="text" title="Viết chữ (T)" aria-label="Viết chữ">
+      <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
+    </button>
+
+    <span class="sep"></span>
+
+    <button class="swatch" data-color="#ff3b30" style="--c:#ff3b30" aria-label="Đỏ"></button>
+    <button class="swatch" data-color="#ff9500" style="--c:#ff9500" aria-label="Cam"></button>
+    <button class="swatch" data-color="#ffcc00" style="--c:#ffcc00" aria-label="Vàng"></button>
+    <button class="swatch" data-color="#34c759" style="--c:#34c759" aria-label="Xanh lá"></button>
+    <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" aria-label="Xanh dương"></button>
+    <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" aria-label="Tím"></button>
+    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" aria-label="Trắng"></button>
+    <button class="swatch" data-color="#111111" style="--c:#111111" aria-label="Đen"></button>
+    <label id="colorCustomWrap" class="swatch custom" title="Màu tuỳ chọn">
+      <input id="colorCustom" type="color" value="#ff3b30" aria-label="Màu tuỳ chọn" />
+    </label>
+
+    <span class="sep"></span>
+    <span id="sizeReadout" class="readout" title="Lăn chuột để đổi kích thước"></span>
+    <span class="sep"></span>
+
+    <button id="btnUndo" title="Hoàn tác (Ctrl/⌘+Z)" aria-label="Hoàn tác">
+      <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+    </button>
+    <button id="btnClose" title="Huỷ (Esc)" aria-label="Huỷ">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <button id="btnSave" title="Lưu file (Ctrl/⌘+S)" aria-label="Lưu file">
+      <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+    </button>
+    <button id="btnSecondary" aria-label="Copy và dán"></button>
+    <button id="btnPrimary" class="primary" aria-label="Xong">
+      <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+    </button>
+  </div>
+
+  <script src="../dist/renderer/editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>ShoreShot · Cài đặt</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <main>
+    <section>
+      <label class="label" for="hotkeyField">Phím tắt chụp màn hình</label>
+      <div class="row">
+        <button id="hotkeyField" class="hotkey" type="button"></button>
+        <button id="btnReset" class="ghost" type="button">Mặc định</button>
+      </div>
+      <p id="msg" class="msg" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <label class="check">
+        <input id="enterPastes" type="checkbox" />
+        <span>
+          <strong>Enter / nút ✓ = copy và tự dán</strong>
+          <small>Chụp xong, ảnh tự dán vào app đang dùng trước đó (Slack, Telegram, Figma…). Tắt thì Enter chỉ copy; vẫn dán nhanh được bằng <kbd id="pasteKey"></kbd>.</small>
+        </span>
+      </label>
+    </section>
+  </main>
+  <script src="../dist/renderer/settings.js"></script>
+</body>
+</html>
