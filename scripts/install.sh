@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ShoreShot installer for macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash
 #
 # Tuỳ chọn (truyền sau `bash -s --`):
 #   --from-source   bỏ qua bản build sẵn, build từ source (cần git + Node.js 18+)
@@ -9,7 +9,7 @@
 #   --no-launch     cài xong không mở app
 set -euo pipefail
 
-REPO="nguucode/shoreshort"
+REPO="nguucode/shoreshot"
 APP_NAME="ShoreShot"
 BUNDLE_ID="biz.ontheshore.shoreshot"
 

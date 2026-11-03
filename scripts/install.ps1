@@ -1,10 +1,10 @@
 # ShoreShot installer for Windows (PowerShell 5.1+).
 #
-#   irm https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 #
 # Tuỳ chọn: tải script về rồi chạy với tham số
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.ps1))) -FromSource
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.ps1))) -Uninstall
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -FromSource
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1))) -Uninstall
 #
 #   -FromSource   bỏ qua bản build sẵn, build từ source (cần git + Node.js 18+)
 #   -Uninstall    gỡ ShoreShot
@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest nhanh hơn nhiều khi tắt progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repo = 'nguucode/shoreshort'
+$Repo = 'nguucode/shoreshot'
 $AppName = 'ShoreShot'
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
 $StartMenuLnk = Join-Path ([Environment]::GetFolderPath('Programs')) "$AppName.lnk"

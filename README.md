@@ -23,15 +23,15 @@ Lăn chuột lên = to hơn, lăn xuống = nhỏ hơn. Trackpad được cộng
 
 **macOS** (mở Terminal):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash
 ```
 
 **Windows** (mở PowerShell, không cần quyền Admin):
 ```powershell
-irm https://raw.githubusercontent.com/nguucode/shoreshort/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 ```
 
-Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshort/releases), cài rồi mở app. Chưa có release phù hợp thì script tự build từ source (lúc đó cần git + Node.js 18+).
+Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshot/releases), cài rồi mở app. Chưa có release phù hợp thì script tự build từ source (lúc đó cần git + Node.js 18+).
 
 | Việc | macOS | Windows |
 |---|---|---|
@@ -43,7 +43,7 @@ Chạy lại lệnh cài là cập nhật lên bản mới nhất.
 
 ### Cách 2: tải file cài
 
-Vào [Releases](https://github.com/nguucode/shoreshort/releases/latest), tải:
+Vào [Releases](https://github.com/nguucode/shoreshot/releases/latest), tải:
 - Mac Apple Silicon (M1 trở lên): `ShoreShot-x.y.z-mac-arm64.dmg`
 - Mac Intel: `ShoreShot-x.y.z-mac-x64.dmg`
 - Windows: `ShoreShot-Setup-x.y.z.exe`
@@ -62,7 +62,7 @@ App chưa ký số (code signing):
 Cần Node.js 18+.
 
 ```bash
-git clone https://github.com/nguucode/shoreshort.git && cd shoreshort
+git clone https://github.com/nguucode/shoreshot.git && cd shoreshot
 npm install
 npm start          # chạy dev (macOS: cấp quyền Screen Recording cho app "Electron")
 npm run dist:mac   # build .dmg + .zip trên Mac
