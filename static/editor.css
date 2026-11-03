@@ -122,8 +122,6 @@ html, body {
 .toolbar button:hover:not(:disabled) { background: var(--bar-hover); }
 .toolbar button:disabled { opacity: 0.35; cursor: default; }
 .toolbar button.active { background: var(--accent); color: #fff; }
-.toolbar button.primary { background: #34c759; color: #fff; }
-.toolbar button.primary:hover { background: #2fb350; }
 .toolbar svg {
   width: 18px;
   height: 18px;

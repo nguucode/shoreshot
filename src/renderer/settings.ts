@@ -1,11 +1,10 @@
-// Settings window: record the capture hotkey + choose what Enter does.
+// Settings window: capture hotkey, options (Retina 1x, open at login), version + links.
 // Wrapped in an IIFE so its globals don't clash with editor.ts.
 (() => {
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const field = el<HTMLButtonElement>('hotkeyField');
   const msg = el<HTMLParagraphElement>('msg');
   const resetBtn = el<HTMLButtonElement>('btnReset');
-  const enterPastes = el<HTMLInputElement>('enterPastes');
   const isMac = navigator.platform.toLowerCase().includes('mac');
 
   let current = '';
@@ -138,23 +137,34 @@
 
   resetBtn.addEventListener('click', () => void apply(defaultHotkey));
 
-  enterPastes.addEventListener('change', async () => {
-    enterPastes.checked = await window.api.settings.setEnterPastes(enterPastes.checked);
-    setMsg(
-      enterPastes.checked
-        ? 'Enter / ✓ now copies and pastes into the previous app.'
-        : 'Enter / ✓ now only copies to the clipboard.',
-      'ok',
-    );
-  });
+  // Checkbox options: id = option name in main. The message under the hotkey confirms the change.
+  const OPTIONS = {
+    retina1x: ['Screenshots on Retina displays are now exported at 1×.', 'Screenshots are exported at full resolution.'],
+    openAtLogin: ['ShoreShot will open at login.', "ShoreShot won't open at login."],
+  } as const;
+  for (const name of Object.keys(OPTIONS) as (keyof typeof OPTIONS)[]) {
+    const box = el<HTMLInputElement>(name);
+    box.addEventListener('change', async () => {
+      box.checked = await window.api.settings.setOption(name, box.checked);
+      setMsg(OPTIONS[name][box.checked ? 0 : 1], 'ok');
+    });
+  }
+
+  el('linkAbout').addEventListener('click', () => window.api.settings.link('about'));
+  el('linkIssues').addEventListener('click', () => window.api.settings.link('issues'));
+  el('linkUpdate').addEventListener('click', () => window.api.settings.link('update'));
 
   async function boot(): Promise<void> {
     const s = await window.api.settings.get();
     current = s.hotkey;
     currentPretty = s.pretty;
     defaultHotkey = s.defaultHotkey;
-    enterPastes.checked = s.enterPastes;
-    el('pasteKey').textContent = isMac ? '⌘V' : 'Ctrl+V';
+    for (const name of ['retina1x', 'openAtLogin'] as const) el<HTMLInputElement>(name).checked = s[name];
+    el('version').textContent = `ShoreShot ${s.version}`;
+    if (s.update) {
+      el('linkUpdate').textContent = `Update to ${s.update}`;
+      el('linkUpdate').classList.remove('hidden');
+    }
     showCurrent();
     if (!s.active) {
       setMsg(`${s.pretty} is used by another app, so it isn't active. Click the field above to pick another.`, 'error');

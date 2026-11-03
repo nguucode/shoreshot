@@ -29,6 +29,7 @@ const ed = {
   viewW: 0,
   viewH: 0,
   k: 1, // image pixels per CSS px
+  retina1x: false, // export at 1x instead of native resolution (Settings)
   selection: null as Box | null,
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
@@ -40,7 +41,6 @@ const ed = {
   draftStart: null as Pt | null,
   textEdit: null as { x: number; y: number; original: TextShape | null } | null,
   wheelAcc: 0,
-  enterPastes: false, // Enter / ✓ button = copy + auto-paste
   pendingPaste: false, // wait for all modifiers to be released before pasting
   hudTimer: 0 as number,
   barSize: null as { w: number; h: number } | null, // toolbar + hint have a fixed size, measured once
@@ -66,11 +66,12 @@ const sizeReadout = $<HTMLSpanElement>('sizeReadout');
 const btnUndo = $<HTMLButtonElement>('btnUndo');
 const colorWrap = $('colorCustomWrap');
 
-/** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips use {mod} as a placeholder. */
+/** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips and the hint use {mod}. */
 const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
 document.querySelectorAll<HTMLElement>('[data-tip*="{mod}"]').forEach((el) => {
   el.dataset.tip = el.dataset.tip!.replace('{mod}', MOD);
 });
+$('pasteHint').querySelectorAll('kbd').forEach((k) => (k.textContent = k.textContent!.replace('{mod}', MOD)));
 
 // ---------- helpers ----------
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -87,6 +88,8 @@ const clampToSel = (p: Pt): Pt => {
 };
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
+/** Exported pixels per CSS px: native, or 1 when "Export at 1x on Retina" is on. */
+const outScale = () => (ed.retina1x ? 1 : ed.k);
 
 const GRIP = 6; // px around the selection edges/corners that grab a resize
 /** Which edge/corner of the selection point p is on (null if none). */
@@ -199,7 +202,7 @@ function layout(): void {
     const s = norm(ed.selection);
     place(selEl, s);
     selEl.classList.remove('empty');
-    sizeBadge.textContent = `${Math.round(s.w * ed.k)} × ${Math.round(s.h * ed.k)}`;
+    sizeBadge.textContent = `${Math.round(s.w * outScale())} × ${Math.round(s.h * outScale())}`;
     sizeBadge.classList.remove('hidden');
     const by = s.y - 28 >= 4 ? s.y - 28 : s.y + 6;
     sizeBadge.style.transform = `translate(${Math.max(4, s.x)}px, ${by}px)`;
@@ -398,12 +401,13 @@ function redoAction(): void {
 async function exportPNG(): Promise<Uint8Array> {
   commitText();
   const s = norm(ed.selection!);
-  const k = ed.k;
+  const k = outScale();
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(s.w * k));
   out.height = Math.max(1, Math.round(s.h * k));
   const c = out.getContext('2d')!;
-  c.drawImage(bg, s.x * k, s.y * k, s.w * k, s.h * k, 0, 0, out.width, out.height);
+  c.imageSmoothingQuality = 'high'; // matters when downscaling for the 1x option
+  c.drawImage(bg, s.x * ed.k, s.y * ed.k, s.w * ed.k, s.h * ed.k, 0, 0, out.width, out.height);
   c.setTransform(k, 0, 0, k, -s.x * k, -s.y * k);
   ed.shapes.forEach((sh) => drawShape(c, sh));
   const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
@@ -435,16 +439,6 @@ function requestPaste(e?: KeyboardEvent): void {
     return;
   }
   void act(window.api.copyPaste);
-}
-
-/** Primary action (Enter, ✓ button) and secondary action, per the setting. */
-function primaryAction(e?: KeyboardEvent): void {
-  if (ed.enterPastes) requestPaste(e);
-  else void act(window.api.copy);
-}
-function secondaryAction(): void {
-  if (ed.enterPastes) void act(window.api.copy);
-  else requestPaste();
 }
 
 function startSelecting(p: Pt): void {
@@ -675,7 +669,7 @@ window.addEventListener('keydown', (e) => {
   if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
   if (mod && k === 'c') { e.preventDefault(); void act(window.api.copy); return; }
   if (mod && k === 's') { e.preventDefault(); void act(window.api.save); return; }
-  if (e.key === 'Enter') { e.preventDefault(); return primaryAction(e); }
+  if (e.key === 'Enter') { e.preventDefault(); void act(window.api.copy); return; }
   if (mod) return;
   if (k === 'r') setTool('rect');
   else if (k === 'o') setTool('ellipse');
@@ -703,8 +697,7 @@ toolbarEl.addEventListener('click', (e) => {
   else if (btn.dataset.color) setColor(btn.dataset.color);
   else if (btn.id === 'btnUndo') undo();
   else if (btn.id === 'btnSave') void act(window.api.save);
-  else if (btn.id === 'btnPrimary') primaryAction();
-  else if (btn.id === 'btnSecondary') secondaryAction();
+  else if (btn.id === 'btnSecondary') requestPaste();
   else if (btn.id === 'btnClose') window.api.close();
 });
 colorInput.addEventListener('input', () => setColor(colorInput.value));
@@ -713,22 +706,6 @@ colorInput.addEventListener('change', () => {
 });
 
 // ---------- overlay lifecycle ----------
-const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
-const ICON_PASTE = '<svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>';
-
-function setupActionButtons(): void {
-  const m = MOD;
-  const copyTitle = `Copy to clipboard (${m}C)`;
-  const pasteTitle = `Copy and paste into the previous app (${m}V)`;
-  const primary = $<HTMLButtonElement>('btnPrimary');
-  const secondary = $<HTMLButtonElement>('btnSecondary');
-  primary.dataset.tip = `${ed.enterPastes ? pasteTitle : copyTitle} · Enter`;
-  secondary.dataset.tip = ed.enterPastes ? copyTitle : pasteTitle;
-  $('pasteHint').innerHTML = `<kbd>${m}C</kbd> to copy · <kbd>${m}V</kbd> to paste`;
-  secondary.setAttribute('aria-label', ed.enterPastes ? 'Copy' : 'Copy and paste');
-  secondary.innerHTML = ed.enterPastes ? ICON_COPY : ICON_PASTE;
-}
-
 /** Back to idle and free the image memory. Tool, color and sizes carry over between captures. */
 function reset(): void {
   ed.phase = 'loading';
@@ -749,23 +726,22 @@ window.api.onCapture((cap) => {
   ed.viewW = cap.width;
   ed.viewH = cap.height;
   ed.k = cap.pxW / cap.width;
-  ed.enterPastes = cap.enterPastes;
-  setupActionButtons();
+  ed.retina1x = cap.retina1x;
   bg.width = cap.pxW;
   bg.height = cap.pxH;
   bgCtx.putImageData(toImageData(cap.bitmap, cap.pxW, cap.pxH, cap.bgra), 0, 0);
   ed.phase = 'selecting';
   syncToolbar();
   layout();
-  // Main shows the window transparent first; wait 2 frames for the new image, then reveal it.
-  // macOS may treat an opacity-0 window as occluded and pause frames, so report after 100 ms regardless.
+  // Main shows the window transparent first; reveal it once the new image has been painted (next frame).
+  // macOS may treat an opacity-0 window as occluded and pause frames, so report after 50 ms regardless.
   let sent = false;
   const ready = () => {
     if (sent) return;
     sent = true;
     window.api.ready();
   };
-  requestAnimationFrame(() => requestAnimationFrame(ready));
-  setTimeout(ready, 100);
+  requestAnimationFrame(ready);
+  setTimeout(ready, 50);
 });
 window.api.onHidden(reset);

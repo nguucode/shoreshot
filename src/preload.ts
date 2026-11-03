@@ -14,6 +14,7 @@ electron.contextBridge.exposeInMainWorld('api', {
     get: () => electron.ipcRenderer.invoke('settings:get'),
     setHotkey: (accel: string) => electron.ipcRenderer.invoke('settings:setHotkey', accel),
     setRecording: (on: boolean) => electron.ipcRenderer.send('settings:recording', on),
-    setEnterPastes: (on: boolean) => electron.ipcRenderer.invoke('settings:setEnterPastes', on),
+    setOption: (name: string, on: boolean) => electron.ipcRenderer.invoke('settings:setOption', name, on),
+    link: (name: string) => electron.ipcRenderer.send('settings:link', name),
   },
 });
