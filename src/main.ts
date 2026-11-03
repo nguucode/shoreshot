@@ -13,12 +13,14 @@ import {
   systemPreferences,
   shell,
   Display,
-  IpcMainInvokeEvent,
-  IpcMainEvent,
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { setTimeout as sleep } from 'timers/promises';
+
+const run = promisify(execFile);
 
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const isMac = process.platform === 'darwin';
@@ -41,7 +43,7 @@ let settingsWin: BrowserWindow | null = null;
 let capturing = false;
 let config: Config = { hotkey: DEFAULT_HOTKEY, enterPastes: false };
 let hotkeyActive = false; // phím tắt hiện có đang đăng ký thành công không
-const payloads = new Map<number, CapturePayload>();
+let payload: CapturePayload | null = null; // ảnh của overlay đang mở (chỉ có 1 overlay)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -92,20 +94,13 @@ function registerHotkey(accel: string): boolean {
   }
 }
 
-function unregisterHotkey(accel: string): void {
-  try {
-    globalShortcut.unregister(accel);
-  } catch {
-    /* bỏ qua */
-  }
-}
-
 type SetHotkeyResult = { ok: true; hotkey: string } | { ok: false; error: string };
 
 async function setHotkey(accel: string): Promise<SetHotkeyResult> {
   const old = config.hotkey;
   if (accel === old && hotkeyActive) return { ok: true, hotkey: old };
-  unregisterHotkey(old);
+  // Chỉ gỡ khi đang đăng ký: phím trong config sửa tay có thể sai cú pháp, unregister sẽ throw.
+  if (hotkeyActive) globalShortcut.unregister(old);
   if (!registerHotkey(accel)) {
     hotkeyActive = registerHotkey(old); // trả lại phím cũ
     return {
@@ -230,7 +225,7 @@ ipcMain.handle('settings:setEnterPastes', async (_e, value: boolean) => {
 // Khi đang ghi phím mới, tạm gỡ phím hiện tại để bấm lại chính nó không kích hoạt chụp.
 ipcMain.on('settings:recording', (_e, recording: boolean) => {
   if (recording) {
-    unregisterHotkey(config.hotkey);
+    if (hotkeyActive) globalShortcut.unregister(config.hotkey);
     hotkeyActive = false;
   } else if (!hotkeyActive) {
     hotkeyActive = registerHotkey(config.hotkey);
@@ -241,8 +236,6 @@ ipcMain.handle('settings:setHotkey', async (_e, accel: string) => {
   const res = await setHotkey(accel);
   return res.ok ? { ...res, pretty: prettyHotkey(res.hotkey) } : res;
 });
-
-ipcMain.handle('settings:pretty', (_e, accel: string) => prettyHotkey(accel));
 
 async function ensureMacPermission(): Promise<boolean> {
   if (!isMac) return true;
@@ -301,7 +294,7 @@ async function startCapture(): Promise<void> {
   }
 }
 
-function openOverlay(display: Display, payload: CapturePayload): void {
+function openOverlay(display: Display, p: CapturePayload): void {
   const { x, y, width, height } = display.bounds;
   const win = new BrowserWindow({
     x,
@@ -328,8 +321,7 @@ function openOverlay(display: Display, payload: CapturePayload): void {
     },
   });
   overlay = win;
-  const id = win.webContents.id;
-  payloads.set(id, payload);
+  payload = p;
 
   win.setAlwaysOnTop(true, 'screen-saver');
   if (isMac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -339,8 +331,10 @@ function openOverlay(display: Display, payload: CapturePayload): void {
   const fallback = setTimeout(() => showOverlay(win), 1500);
   win.once('closed', () => {
     clearTimeout(fallback);
-    payloads.delete(id);
-    if (overlay === win) overlay = null;
+    if (overlay === win) {
+      overlay = null;
+      payload = null;
+    }
   });
   void win.loadFile(path.join(__dirname, '../static/editor.html'));
 }
@@ -348,36 +342,30 @@ function openOverlay(display: Display, payload: CapturePayload): void {
 function showOverlay(win: BrowserWindow): void {
   if (win.isDestroyed() || win.isVisible()) return;
   win.show();
+  win.setAlwaysOnTop(true, 'screen-saver'); // đặt lại sau khi bị hide() lúc mở hộp thoại Save
   if (isMac) app.focus({ steal: true });
   win.focus();
 }
 
-function senderWindow(e: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow | null {
-  return BrowserWindow.fromWebContents(e.sender);
-}
-
-ipcMain.handle('capture:get', (e) => {
-  const p = payloads.get(e.sender.id);
-  return p ? { ...p, enterPastes: config.enterPastes } : null;
-});
+ipcMain.handle('capture:get', () => (payload ? { ...payload, enterPastes: config.enterPastes } : null));
 
 ipcMain.on('capture:ready', (e) => {
-  const win = senderWindow(e);
+  const win = BrowserWindow.fromWebContents(e.sender);
   if (win) showOverlay(win);
 });
 
-ipcMain.on('capture:close', (e) => senderWindow(e)?.close());
+ipcMain.on('capture:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 
 ipcMain.handle('capture:copy', (e, dataURL: string) => {
   clipboard.writeImage(nativeImage.createFromDataURL(dataURL));
-  senderWindow(e)?.close();
+  BrowserWindow.fromWebContents(e.sender)?.close();
   return true;
 });
 
 // Copy rồi tự dán (⌘V / Ctrl+V) vào app đang dùng trước khi chụp.
 ipcMain.handle('capture:copyPaste', async (e, dataURL: string) => {
   clipboard.writeImage(nativeImage.createFromDataURL(dataURL));
-  const win = senderWindow(e);
+  const win = BrowserWindow.fromWebContents(e.sender);
 
   if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) {
     win?.close();
@@ -401,45 +389,32 @@ ipcMain.handle('capture:copyPaste', async (e, dataURL: string) => {
     await sendPasteKeystroke();
     return true;
   } catch (err) {
+    const { stderr, message } = err as { stderr?: string; message: string };
     dialog.showErrorBox(
       'ShoreShot',
-      `Ảnh đã copy nhưng không tự dán được: ${(err as Error).message}. Bấm ${isMac ? '⌘V' : 'Ctrl+V'} để dán.`,
+      `Ảnh đã copy nhưng không tự dán được: ${(stderr || message).trim()}. Bấm ${isMac ? '⌘V' : 'Ctrl+V'} để dán.`,
     );
     return false;
   }
 });
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function run(cmd: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, { windowsHide: true, timeout: 8000 }, (err, _out, stderr) =>
-      err ? reject(new Error(String(stderr || err.message).trim())) : resolve(),
-    );
-  });
-}
-
-function sendPasteKeystroke(): Promise<void> {
+function sendPasteKeystroke(): Promise<unknown> {
+  const opts = { windowsHide: true, timeout: 8000 };
   if (isMac) {
-    return run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+    return run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'], opts);
   }
-  if (process.platform === 'win32') {
-    return run('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
-    ]);
-  }
-  return run('xdotool', ['key', '--clearmodifiers', 'ctrl+v']); // Linux (nếu có xdotool)
+  return run('powershell.exe', [ // Windows (app chỉ build cho mac + win)
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
+  ], opts);
 }
 
 ipcMain.handle('capture:save', async (e, dataURL: string) => {
-  const win = senderWindow(e);
+  const win = BrowserWindow.fromWebContents(e.sender);
   // Ẩn overlay để hộp thoại Save không bị che.
   win?.hide();
   const { canceled, filePath } = await dialog.showSaveDialog({
@@ -448,7 +423,7 @@ ipcMain.handle('capture:save', async (e, dataURL: string) => {
     filters: [{ name: 'PNG', extensions: ['png'] }],
   });
   if (canceled || !filePath) {
-    if (win) showOverlayAgain(win);
+    if (win) showOverlay(win);
     return false;
   }
   const base64 = dataURL.replace(/^data:image\/png;base64,/, '');
@@ -457,16 +432,5 @@ ipcMain.handle('capture:save', async (e, dataURL: string) => {
   return true;
 });
 
-function showOverlayAgain(win: BrowserWindow): void {
-  if (win.isDestroyed()) return;
-  win.show();
-  win.setAlwaysOnTop(true, 'screen-saver');
-  if (isMac) app.focus({ steal: true });
-  win.focus();
-}
-
-function timestamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
-}
+// sv-SE cho dạng "YYYY-MM-DD HH:MM:SS"; đổi ":" vì Windows cấm trong tên file.
+const timestamp = () => new Date().toLocaleString('sv-SE').replace(/:/g, '.');

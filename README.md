@@ -31,12 +31,11 @@ curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/ins
 irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 ```
 
-Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshot/releases), cài rồi mở app. Chưa có release phù hợp thì script tự build từ source (lúc đó cần git + Node.js 18+).
+Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshot/releases), cài rồi mở app.
 
 | Việc | macOS | Windows |
 |---|---|---|
 | Cài vào | `/Applications` (không ghi được thì `~/Applications`) | `%LOCALAPPDATA%\Programs\ShoreShot` |
-| Ép build từ source | `... \| bash -s -- --from-source` | `& ([scriptblock]::Create((irm <url>))) -FromSource` |
 | Gỡ | `... \| bash -s -- --uninstall` | `& ([scriptblock]::Create((irm <url>))) -Uninstall` |
 
 Chạy lại lệnh cài là cập nhật lên bản mới nhất.

@@ -28,7 +28,6 @@ interface ShoreShotApi {
   settings: {
     get(): Promise<ShoreShotSettings>;
     setHotkey(accel: string): Promise<ShoreShotSetHotkeyResult>;
-    pretty(accel: string): Promise<string>;
     setRecording(on: boolean): void;
     setEnterPastes(on: boolean): Promise<boolean>;
   };

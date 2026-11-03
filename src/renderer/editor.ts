@@ -310,13 +310,9 @@ function exportPNG(): string {
   return out.toDataURL('image/png');
 }
 
-async function copyAndClose(): Promise<void> {
-  if (ed.phase !== 'editing') return;
-  await window.api.copy(exportPNG());
-}
-async function pasteAndClose(): Promise<void> {
-  if (ed.phase !== 'editing') return;
-  await window.api.copyPaste(exportPNG());
+/** Xuất ảnh rồi gửi sang main (copy / copyPaste / save); main tự đóng overlay. */
+function act(send: (dataURL: string) => Promise<boolean>): void {
+  if (ed.phase === 'editing') void send(exportPNG());
 }
 
 const modsHeld = (e: KeyboardEvent) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
@@ -327,25 +323,17 @@ function requestPaste(e?: KeyboardEvent): void {
     ed.pendingPaste = true;
     return;
   }
-  void pasteAndClose();
+  act(window.api.copyPaste);
 }
 
 /** Hành động chính (Enter, nút ✓) và hành động phụ, theo cài đặt. */
 function primaryAction(e?: KeyboardEvent): void {
   if (ed.enterPastes) requestPaste(e);
-  else void copyAndClose();
+  else act(window.api.copy);
 }
 function secondaryAction(): void {
-  if (ed.enterPastes) void copyAndClose();
+  if (ed.enterPastes) act(window.api.copy);
   else requestPaste();
-}
-
-async function saveAndClose(): Promise<void> {
-  if (ed.phase !== 'editing') return;
-  await window.api.save(exportPNG());
-}
-function closeOverlay(): void {
-  window.api.close();
 }
 
 function startSelecting(p: Pt): void {
@@ -461,7 +449,7 @@ canvas.addEventListener('contextmenu', (e) => {
     syncToolbar();
     render();
   } else if (ed.phase === 'selecting' && !ed.selStart) {
-    closeOverlay();
+    window.api.close();
   }
 });
 
@@ -513,14 +501,14 @@ textInput.addEventListener('mousedown', (e) => e.stopPropagation());
 window.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
-  if (e.key === 'Escape') return closeOverlay();
+  if (e.key === 'Escape') return window.api.close();
   if (ed.phase !== 'editing') return;
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); return undo(); }
   if ((mod && k === 'z' && e.shiftKey) || (mod && k === 'y')) { e.preventDefault(); return redoAction(); }
   // ⌘V / Ctrl+V (và cả bản có Shift) = copy + tự dán vào app trước đó.
   if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
-  if (mod && k === 'c') { e.preventDefault(); void copyAndClose(); return; }
-  if (mod && k === 's') { e.preventDefault(); void saveAndClose(); return; }
+  if (mod && k === 'c') { e.preventDefault(); act(window.api.copy); return; }
+  if (mod && k === 's') { e.preventDefault(); act(window.api.save); return; }
   if (e.key === 'Enter') { e.preventDefault(); return primaryAction(e); }
   if (mod) return;
   if (k === 'r') setTool('rect');
@@ -531,7 +519,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (ed.pendingPaste && !modsHeld(e)) {
     ed.pendingPaste = false;
-    void pasteAndClose();
+    act(window.api.copyPaste);
   }
 });
 
@@ -546,10 +534,10 @@ toolbarEl.addEventListener('click', (e) => {
   if (btn.dataset.tool) setTool(btn.dataset.tool as Tool);
   else if (btn.dataset.color) setColor(btn.dataset.color);
   else if (btn.id === 'btnUndo') undo();
-  else if (btn.id === 'btnSave') void saveAndClose();
+  else if (btn.id === 'btnSave') act(window.api.save);
   else if (btn.id === 'btnPrimary') primaryAction();
   else if (btn.id === 'btnSecondary') secondaryAction();
-  else if (btn.id === 'btnClose') closeOverlay();
+  else if (btn.id === 'btnClose') window.api.close();
 });
 colorInput.addEventListener('input', () => setColor(colorInput.value));
 colorInput.addEventListener('change', () => {
@@ -587,7 +575,7 @@ function setupActionButtons(): void {
 
 async function boot(): Promise<void> {
   const cap = await window.api.getCapture();
-  if (!cap) return closeOverlay();
+  if (!cap) return window.api.close();
   ed.enterPastes = cap.enterPastes;
   setupActionButtons();
   ed.img.src = cap.dataURL;
