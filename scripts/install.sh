@@ -40,7 +40,7 @@ quit_app() {
 }
 
 if [ "$UNINSTALL" = 1 ]; then
-  say "Gỡ $APP_NAME…"
+  say "Gỡ ${APP_NAME}…"
   quit_app
   for d in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
     [ -d "$d" ] && rm -rf "$d" && ok "Đã xoá $d"
@@ -74,7 +74,7 @@ download_release() {
 
 download_release || die "Chưa có bản build sẵn cho mac-$ARCH. Xem https://github.com/$REPO/releases"
 
-say "Cài vào $DEST…"
+say "Cài vào ${DEST}…"
 mkdir -p "$DEST_DIR"
 quit_app
 rm -rf "$DEST"
