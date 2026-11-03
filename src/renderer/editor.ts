@@ -875,7 +875,7 @@ actionsEl.addEventListener('click', (e) => {
   else if (btn.dataset.color) setColor(btn.dataset.color);
   else if (btn.id === 'btnUndo') undo();
   else if (btn.id === 'btnSave') void act(window.api.save);
-  else if (btn.id === 'btnSecondary') requestPaste();
+  else if (btn.id === 'btnCopy') void act(window.api.copy);
   else if (btn.id === 'btnClose') window.api.close();
 });
 colorInput.addEventListener('input', () => setColor(colorInput.value));
