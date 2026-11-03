@@ -1,4 +1,9 @@
+type ShoreShotMode = 'area' | 'full' | 'window';
+interface ShoreShotBox { x: number; y: number; w: number; h: number }
+
 interface ShoreShotCapture {
+  mode: ShoreShotMode;
+  cursor: { x: number; y: number }; // CSS px
   bitmap: Uint8Array; // pxW × pxH pixels, RGBA or BGRA
   bgra: boolean;
   pxW: number;
@@ -9,11 +14,8 @@ interface ShoreShotCapture {
 }
 
 interface ShoreShotSettings {
-  hotkey: string;
-  pretty: string;
-  active: boolean;
-  defaultHotkey: string;
-  platform: string;
+  hotkeys: Record<ShoreShotMode, { hotkey: string; pretty: string; active: boolean }>;
+  defaults: Record<ShoreShotMode, string>; // '' = not set
   retina1x: boolean;
   openAtLogin: boolean;
   version: string;
@@ -27,6 +29,7 @@ type ShoreShotSetHotkeyResult =
 interface ShoreShotApi {
   onCapture(cb: (cap: ShoreShotCapture) => void): void;
   onHidden(cb: () => void): void;
+  onWindows(cb: (windows: ShoreShotBox[]) => void): void;
   ready(): void;
   copy(png: Uint8Array): Promise<boolean>;
   copyPaste(png: Uint8Array): Promise<boolean>;
@@ -34,7 +37,7 @@ interface ShoreShotApi {
   close(): void;
   settings: {
     get(): Promise<ShoreShotSettings>;
-    setHotkey(accel: string): Promise<ShoreShotSetHotkeyResult>;
+    setHotkey(mode: ShoreShotMode, accel: string): Promise<ShoreShotSetHotkeyResult>;
     setRecording(on: boolean): void;
     setOption(name: 'retina1x' | 'openAtLogin', on: boolean): Promise<boolean>;
     link(name: 'about' | 'issues' | 'update'): void;

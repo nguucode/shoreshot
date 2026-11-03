@@ -1,7 +1,7 @@
 {
   "name": "shoreshot",
   "productName": "ShoreShot",
-  "version": "0.1.11",
+  "version": "0.2.0",
   "description": "Cross-platform screenshot + annotate (rect, text, pen) for Windows and macOS",
   "main": "dist/main.js",
   "author": "Ngưu Nguyễn",

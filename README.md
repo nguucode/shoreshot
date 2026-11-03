@@ -6,17 +6,19 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 
 | Area | Details |
 |---|---|
-| Capture | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI), or at 1× if you turn that on in Settings. |
+| Capture area | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI), or at 1× if you turn that on in Settings. |
+| Capture full screen | Selects the whole display under the cursor and goes straight to annotating. No hotkey by default: assign one in Settings, or use the tray menu. |
+| Capture window | Hover to frame the window under the cursor, click to select it (what is visible on screen in that window's frame). Dragging still selects an area; clicking the empty desktop selects the whole screen. No hotkey by default: assign one in Settings, or use the tray menu. |
 | Rectangle | Tool `R`. Hold `Shift` for a square. Scroll to change the border width (1 to 40px), even while dragging. |
 | Ellipse | Tool `O`. Hold `Shift` for a circle. Scroll to change the border width. |
 | Line | Tool `L`. Scroll to change the stroke width. |
-| Text | Tool `T`. Click to type, `Enter` to finish, `Shift+Enter` for a new line, `Esc` to cancel. Scroll to change the font size (10 to 160px). Click existing text to edit its content, size, color. |
+| Text | Tool `T`. Click to type, `Enter` to finish, `Shift+Enter` for a new line, `Esc` to cancel. While typing, drag the dashed frame around the text to move it. Scroll to change the font size (10 to 160px). Click existing text to edit its content, size, color. |
 | Pen | Tool `P`. Strokes are smoothed. Scroll to change the stroke width. |
 | Color | 8 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
-| Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
-| Settings | Tray menu > **Settings…**: capture hotkey, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
+| Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. The toolbar sits vertically to the right of the selection; hover a button to see its name and shortcut. |
+| Settings | Tray menu > **Settings…**: hotkeys for area / full screen / window capture, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
 | Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 
 Scroll up = bigger, scroll down = smaller. Trackpad scrolling is accumulated so it doesn't jump too fast.
@@ -91,11 +93,11 @@ GitHub Actions (`.github/workflows/build.yml`) builds on macOS + Windows and cre
 
 macOS ties Screen Recording / Accessibility permissions to the app's signature, so every release must be signed with the same certificate (`scripts/after-pack.js`). The build reads it from two repository secrets: `MAC_CERT_P12` (base64 of a `.p12` holding a self-signed code-signing certificate whose name contains "ShoreShot") and `MAC_CERT_PASSWORD`. Without them the build falls back to ad-hoc signing, and users get asked for permissions again after every update. Keep the `.p12` safe: a new certificate also resets everyone's permissions once.
 
-## Changing the hotkey
+## Changing the hotkeys
 
-Menu bar / tray icon > **Settings…** > click the hotkey field > press the new combination. The app registers it right away; if the combination is taken by the system or another app, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** goes back to `⌘⇧X` / `Ctrl+Shift+X`.
+Menu bar / tray icon > **Settings…** > click the field next to **Capture area**, **Capture full screen** or **Capture window** > press the new combination. The app registers it right away; if the combination is taken by the system, another app or another ShoreShot capture, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** puts the area hotkey back to `⌘⇧X` / `Ctrl+Shift+X`; **Clear** removes the full screen / window hotkey.
 
-Settings are stored in `config.json` in the userData folder (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). If the saved hotkey is taken by another app at startup, the Settings window opens automatically.
+Settings are stored in `config.json` in the userData folder (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). If a saved hotkey is taken by another app at startup, the Settings window opens automatically.
 
 Windows 11 note: `PrintScreen` is usually assigned to Snipping Tool. To use it, turn that off in Settings > Accessibility > Keyboard > "Use the Print screen key to open screen capture".
 
@@ -111,7 +113,7 @@ Windows 11 note: `PrintScreen` is usually assigned to Snipping Tool. To use it, 
 src/main.ts              main process: tray, hotkey + config, capture, clipboard, auto-paste, save
 src/preload.ts           safe IPC bridge (contextIsolation + sandbox)
 src/renderer/editor.ts   overlay for selecting an area + drawing annotations (canvas)
-src/renderer/settings.ts Settings window: hotkey recording, what Enter does
+src/renderer/settings.ts Settings window: hotkey recording, options
 static/                  HTML/CSS for the overlay and Settings
 scripts/install.sh|.ps1  terminal install/uninstall (macOS/Windows)
 assets/                  tray icons
@@ -122,3 +124,4 @@ build/icon.png           app icon (electron-builder converts it to .icns/.ico)
 
 - One display per capture (the one under the cursor). A selection can't span two displays.
 - Shapes can't be selected and moved after drawing (text can be clicked to edit).
+- Window capture crops what is on screen inside the window's frame, so anything covering that window is included.
