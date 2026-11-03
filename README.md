@@ -121,7 +121,7 @@ static/                  HTML/CSS for the overlay and Settings
 scripts/install.sh|.ps1  terminal install/uninstall (macOS/Windows)
 assets/                  tray icons
 build/icon.png           app icon (electron-builder converts it to .icns/.ico)
-docs/                    website (GitHub Pages, shoreshot.ontheshore.biz); docs/shot.png is a render of the real editor overlay
+docs/                    website (GitHub Pages, shoreshot.ontheshore.biz); docs/shot-*.jpg are renders of the real editor overlay (the hero animation)
 ```
 
 ## Current limitations
