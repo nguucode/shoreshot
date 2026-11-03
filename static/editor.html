@@ -42,16 +42,14 @@
     <button class="swatch" data-color="#34c759" style="--c:#34c759" data-tip="Green" aria-label="Green"></button>
     <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" data-tip="Blue" aria-label="Blue"></button>
     <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" data-tip="Purple" aria-label="Purple"></button>
-    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" data-tip="White" aria-label="White"></button>
-    <button class="swatch" data-color="#111111" style="--c:#111111" data-tip="Black" aria-label="Black"></button>
     <label id="colorCustomWrap" class="swatch custom" data-tip="Custom color">
       <input id="colorCustom" type="color" value="#ff3b30" aria-label="Custom color" />
     </label>
 
     <span class="sep"></span>
     <span id="sizeReadout" class="readout"></span>
-    <span class="sep"></span>
-
+  </div>
+  <div id="actionBar" class="toolbar" role="toolbar" aria-label="Actions">
     <button id="btnUndo" data-tip="Undo ({mod}Z)" aria-label="Undo">
       <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
     </button>
@@ -65,8 +63,8 @@
       <svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>
     </button>
   </div>
-  <div id="pasteHint" class="paste-hint"><div><kbd>{mod}C</kbd> copy</div><div><kbd>{mod}V</kbd> paste</div></div>
   </div>
+  <div id="pasteHint" class="paste-hint hidden"><kbd>{mod}C</kbd> to copy · <kbd>{mod}V</kbd> to paste</div>
 
   <script src="../dist/renderer/editor.js"></script>
 </body>

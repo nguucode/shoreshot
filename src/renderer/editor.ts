@@ -44,7 +44,8 @@ const ed = {
   wheelAcc: 0,
   pendingPaste: false, // wait for all modifiers to be released before pasting
   hudTimer: 0 as number,
-  barSize: null as { w: number; h: number } | null, // toolbar + hint have a fixed size, measured once
+  barSize: null as { w: number; h: number } | null, // the bars have a fixed size, measured once
+  hintSize: null as { w: number; h: number } | null,
   resize: null as { edge: Edge; start: Box } | null, // dragging an edge/corner of the selection
   textMove: null as Pt | null, // dragging the text box by its frame: offset from its top-left
   windows: [] as Box[], // window capture: window frames, front to back (empty otherwise)
@@ -59,8 +60,9 @@ const stage = $<HTMLCanvasElement>('stage');
 const ctx = stage.getContext('2d')!;
 const draftCv = $<HTMLCanvasElement>('draft');
 const draftCtx = draftCv.getContext('2d')!;
-const actionsEl = $<HTMLDivElement>('actions'); // toolbar + hint, positioned together
+const actionsEl = $<HTMLDivElement>('actions'); // tools bar + action bar, positioned together
 const toolbarEl = $<HTMLDivElement>('toolbar');
+const pasteHint = $<HTMLDivElement>('pasteHint');
 const sizeBadge = $<HTMLDivElement>('sizeBadge');
 const hud = $<HTMLDivElement>('hud');
 const hint = $<HTMLDivElement>('hint');
@@ -77,7 +79,7 @@ const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
 document.querySelectorAll<HTMLElement>('[data-tip*="{mod}"]').forEach((el) => {
   el.dataset.tip = el.dataset.tip!.replace('{mod}', MOD);
 });
-$('pasteHint').querySelectorAll('kbd').forEach((k) => (k.textContent = k.textContent!.replace('{mod}', MOD)));
+pasteHint.querySelectorAll('kbd').forEach((k) => (k.textContent = k.textContent!.replace('{mod}', MOD)));
 
 // ---------- helpers ----------
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -223,21 +225,32 @@ function layout(): void {
 function positionToolbar(): void {
   if (ed.phase !== 'editing' || !ed.selection) {
     actionsEl.classList.add('hidden');
+    pasteHint.classList.add('hidden');
     return;
   }
   actionsEl.classList.remove('hidden');
+  pasteHint.classList.remove('hidden');
   ed.barSize ??= { w: actionsEl.offsetWidth, h: actionsEl.offsetHeight };
+  ed.hintSize ??= { w: pasteHint.offsetWidth, h: pasteHint.offsetHeight };
   const { w: tw, h: th } = ed.barSize;
   const s = norm(ed.selection);
   const gap = 8;
-  // Vertical toolbar to the right of the selection; else to its left; else inside its right edge.
+  // Bars to the right of the selection; else to its left; else inside its right edge. Bottom-aligned with it.
   let x = s.x + s.w + gap;
   if (x + tw > ed.viewW - 4) x = s.x - tw - gap;
   if (x < 4) x = s.x + s.w - tw - gap;
   x = clamp(x, 4, ed.viewW - tw - 4);
-  const y = clamp(s.y, 4, ed.viewH - th - 4);
+  const y = clamp(s.y + s.h - th, 4, ed.viewH - th - 4);
   actionsEl.style.transform = `translate(${x}px, ${y}px)`;
-  toolbarEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
+  actionsEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
+  // Copy/paste hint: under the selection, right-aligned; inside its bottom edge when there's no room below.
+  const { w: hw, h: hh } = ed.hintSize;
+  let hy = s.y + s.h + gap;
+  if (hy + hh > ed.viewH - 4) hy = s.y + s.h - hh - gap;
+  let hx = s.x + s.w - hw;
+  if (hy < s.y + s.h && x < s.x + s.w) hx = x - hw - gap; // both inside the frame: hint left of the bars
+  hx = clamp(hx, 4, ed.viewW - hw - 4);
+  pasteHint.style.transform = `translate(${hx}px, ${hy}px)`;
 }
 
 /** Fit #stage and #draft to the selection (called on entering editing). Drawing coordinates stay in screen CSS px. */
@@ -492,7 +505,7 @@ function startSelecting(p: Pt): void {
 
 // ---------- pointer ----------
 const pt = (e: MouseEvent): Pt => ({ x: e.clientX, y: e.clientY });
-const onToolbar = (e: MouseEvent) => !!(e.target as Element).closest('#toolbar');
+const onToolbar = (e: MouseEvent) => !!(e.target as Element).closest('#actions');
 
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || onToolbar(e)) return;
@@ -745,11 +758,11 @@ window.addEventListener('keyup', (e) => {
 });
 
 // ---------- toolbar ----------
-toolbarEl.addEventListener('mousedown', (e) => {
+actionsEl.addEventListener('mousedown', (e) => {
   // Don't let the toolbar steal focus from the text input (except the color picker).
   if (!(e.target as HTMLElement).closest('#colorCustomWrap')) e.preventDefault();
 });
-toolbarEl.addEventListener('click', (e) => {
+actionsEl.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button');
   if (!btn) return;
   if (btn.dataset.tool) setTool(btn.dataset.tool as Tool);
