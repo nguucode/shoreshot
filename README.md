@@ -18,7 +18,7 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 | Color | 6 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
-| Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Two vertical bars sit to the right of the selection, bottom-aligned: tools (shapes, colors, size) and actions (undo, cancel, save, copy + paste). The copy/paste shortcuts are shown under the selection. Hover a button to see its name and shortcut. |
+| Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Two vertical bars sit to the right of the selection, bottom-aligned: tools (shapes, colors, size) and actions (undo, cancel, save, copy). The copy/paste shortcuts are shown under the selection. Hover a button to see its name and shortcut. |
 | Settings | Tray menu > **Settings…**: hotkeys for area / full screen / window capture, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
 | Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 

@@ -338,7 +338,7 @@ async function showUpdate(): Promise<void> {
   const command = isMac
     ? 'curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash'
     : 'irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex';
-  const { response } = await dialog.showMessageBox({
+  const { response } = await showDialog({
     type: 'info',
     title: 'ShoreShot update',
     message: `ShoreShot ${update.version} is available`,
@@ -380,7 +380,7 @@ async function ensureMacPermission(): Promise<boolean> {
     await saveConfig();
     return false;
   }
-  const { response } = await dialog.showMessageBox({
+  const { response } = await showDialog({
     type: 'info',
     title: 'ShoreShot needs Screen Recording permission',
     message: 'Allow ShoreShot to record the screen to take screenshots',
@@ -414,7 +414,26 @@ const resetPermission = (service: 'ScreenCapture' | 'Accessibility') =>
  * for the next Node event (measured in capture.log at the first await). Only the rare paths go async:
  * no permission yet, the desktopCapturer fallback, an overlay that is still loading.
  */
+let dialogsOpen = 0;
+/**
+ * Message boxes are app-modal on macOS: while one is open no other ShoreShot window gets input. A capture
+ * started then would put the always-on-top overlay over the dialog and freeze the screen, so captures
+ * wait until it closes (see startCapture).
+ */
+async function showDialog(opts: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  dialogsOpen++;
+  try {
+    return await dialog.showMessageBox(opts);
+  } finally {
+    dialogsOpen--;
+  }
+}
+
 function startCapture(mode: Mode): void {
+  if (dialogsOpen) {
+    app.focus({ steal: true }); // bring the open dialog forward instead
+    return;
+  }
   if (overlayOpen) {
     overlay?.focus();
     return;
@@ -673,7 +692,7 @@ ipcMain.handle('capture:copyPaste', async (e, png: Uint8Array) => {
     hideOverlay(win);
     app.hide();
     systemPreferences.isTrustedAccessibilityClient(true); // shows the macOS permission prompt
-    const { response } = await dialog.showMessageBox({
+    const { response } = await showDialog({
       type: 'info',
       title: 'ShoreShot',
       message: 'Image copied, but it could not be pasted automatically',
