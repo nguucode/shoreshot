@@ -17,47 +17,56 @@
   <div id="hud" class="hud hidden"></div>
 
   <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Công cụ chú thích">
-    <button data-tool="rect" title="Khung (R)" aria-label="Vẽ khung">
+    <div class="row">
+    <button data-tool="rect" data-tip="Khung (R) · giữ Shift: hình vuông" aria-label="Vẽ khung">
       <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>
     </button>
-    <button data-tool="pen" title="Bút vẽ tự do (P)" aria-label="Bút vẽ tự do">
+    <button data-tool="ellipse" data-tip="Hình tròn / elip (O) · giữ Shift: hình tròn" aria-label="Vẽ hình tròn hoặc elip">
+      <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg>
+    </button>
+    <button data-tool="line" data-tip="Đường thẳng (L)" aria-label="Vẽ đường thẳng">
+      <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
+    </button>
+    <button data-tool="pen" data-tip="Bút vẽ tự do (P)" aria-label="Bút vẽ tự do">
       <svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2.1 2.1 0 0 0-3-3L5 16l-1 4z"/><path d="M14 7l3 3"/></svg>
     </button>
-    <button data-tool="text" title="Viết chữ (T)" aria-label="Viết chữ">
+    <button data-tool="text" data-tip="Viết chữ (T)" aria-label="Viết chữ">
       <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
     </button>
 
     <span class="sep"></span>
 
-    <button class="swatch" data-color="#ff3b30" style="--c:#ff3b30" aria-label="Đỏ"></button>
-    <button class="swatch" data-color="#ff9500" style="--c:#ff9500" aria-label="Cam"></button>
-    <button class="swatch" data-color="#ffcc00" style="--c:#ffcc00" aria-label="Vàng"></button>
-    <button class="swatch" data-color="#34c759" style="--c:#34c759" aria-label="Xanh lá"></button>
-    <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" aria-label="Xanh dương"></button>
-    <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" aria-label="Tím"></button>
-    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" aria-label="Trắng"></button>
-    <button class="swatch" data-color="#111111" style="--c:#111111" aria-label="Đen"></button>
-    <label id="colorCustomWrap" class="swatch custom" title="Màu tuỳ chọn">
+    <button class="swatch" data-color="#ff3b30" style="--c:#ff3b30" data-tip="Đỏ" aria-label="Đỏ"></button>
+    <button class="swatch" data-color="#ff9500" style="--c:#ff9500" data-tip="Cam" aria-label="Cam"></button>
+    <button class="swatch" data-color="#ffcc00" style="--c:#ffcc00" data-tip="Vàng" aria-label="Vàng"></button>
+    <button class="swatch" data-color="#34c759" style="--c:#34c759" data-tip="Xanh lá" aria-label="Xanh lá"></button>
+    <button class="swatch" data-color="#0a84ff" style="--c:#0a84ff" data-tip="Xanh dương" aria-label="Xanh dương"></button>
+    <button class="swatch" data-color="#bf5af2" style="--c:#bf5af2" data-tip="Tím" aria-label="Tím"></button>
+    <button class="swatch" data-color="#ffffff" style="--c:#ffffff" data-tip="Trắng" aria-label="Trắng"></button>
+    <button class="swatch" data-color="#111111" style="--c:#111111" data-tip="Đen" aria-label="Đen"></button>
+    <label id="colorCustomWrap" class="swatch custom" data-tip="Màu tuỳ chọn">
       <input id="colorCustom" type="color" value="#ff3b30" aria-label="Màu tuỳ chọn" />
     </label>
 
     <span class="sep"></span>
-    <span id="sizeReadout" class="readout" title="Lăn chuột để đổi kích thước"></span>
+    <span id="sizeReadout" class="readout" data-tip="Lăn chuột để đổi kích thước"></span>
     <span class="sep"></span>
 
-    <button id="btnUndo" title="Hoàn tác (Ctrl/⌘+Z)" aria-label="Hoàn tác">
+    <button id="btnUndo" data-tip="Hoàn tác (⌘/Ctrl+Z)" aria-label="Hoàn tác">
       <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
     </button>
-    <button id="btnClose" title="Huỷ (Esc)" aria-label="Huỷ">
+    <button id="btnClose" data-tip="Huỷ (Esc)" aria-label="Huỷ">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
-    <button id="btnSave" title="Lưu file (Ctrl/⌘+S)" aria-label="Lưu file">
+    <button id="btnSave" data-tip="Lưu file PNG (⌘/Ctrl+S)" aria-label="Lưu file">
       <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
     </button>
     <button id="btnSecondary" aria-label="Copy và dán"></button>
     <button id="btnPrimary" class="primary" aria-label="Xong">
       <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
     </button>
+    </div>
+    <div id="pasteHint" class="paste-hint"></div>
   </div>
 
   <script src="../dist/renderer/editor.js"></script>

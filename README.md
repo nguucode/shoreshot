@@ -6,11 +6,13 @@ App chụp màn hình + chú thích cho **macOS và Windows** (Electron + TypeSc
 
 | Nhóm | Chi tiết |
 |---|---|
-| Chụp | Phím tắt toàn cục, mặc định `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows), **đổi được** trong Cài đặt. Kéo để chọn vùng, click 1 phát = cả màn hình. Chụp màn hình đang có con trỏ chuột. Ảnh xuất ở độ phân giải thật (Retina / HiDPI). |
-| Vẽ khung | Tool `R`. Lăn chuột để đổi độ dày viền (1 đến 40px), kể cả khi đang kéo. |
+| Chụp | Phím tắt toàn cục, mặc định `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows), **đổi được** trong Cài đặt. Kéo để chọn vùng, click 1 phát = cả màn hình. Kéo cạnh hoặc góc khung để chỉnh lại vùng chọn (vẽ rồi vẫn chỉnh được). Chụp màn hình đang có con trỏ chuột. Ảnh xuất ở độ phân giải thật (Retina / HiDPI). |
+| Vẽ khung | Tool `R`. Giữ `Shift` để vẽ hình vuông. Lăn chuột để đổi độ dày viền (1 đến 40px), kể cả khi đang kéo. |
+| Hình tròn / elip | Tool `O`. Giữ `Shift` để vẽ hình tròn. Lăn chuột để đổi độ dày viền. |
+| Đường thẳng | Tool `L`. Lăn chuột để đổi độ dày nét. |
 | Viết chữ | Tool `T`. Click để gõ, `Enter` để xong, `Shift+Enter` xuống dòng, `Esc` huỷ. Lăn chuột để đổi cỡ chữ (10 đến 160px). Click lại vào chữ đã viết để sửa nội dung, cỡ, màu. |
 | Bút tự do | Tool `P`. Nét được làm mượt. Lăn chuột để đổi độ dày nét. |
-| Màu | 8 màu sẵn + bảng màu tuỳ chọn. Áp dụng cho khung, chữ, bút. Đổi màu khi đang gõ chữ thì chữ đổi màu ngay. |
+| Màu | 8 màu sẵn + bảng màu tuỳ chọn. Áp dụng cho mọi công cụ. Đổi màu khi đang gõ chữ thì chữ đổi màu ngay. |
 | Xuất | `⌘/Ctrl+C`: copy vào clipboard. `⌘/Ctrl+S`: lưu PNG (mặc định vào Pictures). |
 | Copy + tự dán | `⌘V` / `Ctrl+V`: copy rồi tự dán thẳng vào app đang dùng trước khi chụp (Slack, Telegram, Figma…). Trong Cài đặt có thể đặt `Enter` / nút ✓ làm việc này thay cho copy thường. |
 | Khác | `Enter` / nút ✓: copy (hoặc copy + dán, tuỳ cài đặt). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` hoặc `Ctrl+Y` redo, `Esc` thoát. Chuột phải khi chưa vẽ = chọn lại vùng. Menu tray có "Khởi động cùng máy". |
