@@ -73,10 +73,10 @@ npm run dist:mac   # build .dmg + .zip on a Mac
 npm run dist:win   # build .exe on Windows
 ```
 
-To see how long each capture step takes, quit ShoreShot and start it with `open` (not by running the binary directly: macOS would then treat Terminal as the app recording the screen):
+Each capture writes one line of step timings (ms since the hotkey) to `~/Library/Logs/ShoreShot/capture.log` (Windows: `%APPDATA%\ShoreShot\logs\capture.log`):
 
 ```bash
-open --env SHORESHOT_TIMING=1 --stdout /tmp/shoreshot-timing.log /Applications/ShoreShot.app && tail -f /tmp/shoreshot-timing.log
+tail -f ~/Library/Logs/ShoreShot/capture.log
 ```
 
 ### Releasing a new version
