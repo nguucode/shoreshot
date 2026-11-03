@@ -697,7 +697,6 @@ toolbarEl.addEventListener('click', (e) => {
   else if (btn.dataset.color) setColor(btn.dataset.color);
   else if (btn.id === 'btnUndo') undo();
   else if (btn.id === 'btnSave') void act(window.api.save);
-  else if (btn.id === 'btnPrimary') void act(window.api.copy);
   else if (btn.id === 'btnSecondary') requestPaste();
   else if (btn.id === 'btnClose') window.api.close();
 });
@@ -734,15 +733,15 @@ window.api.onCapture((cap) => {
   ed.phase = 'selecting';
   syncToolbar();
   layout();
-  // Main shows the window transparent first; wait 2 frames for the new image, then reveal it.
-  // macOS may treat an opacity-0 window as occluded and pause frames, so report after 100 ms regardless.
+  // Main shows the window transparent first; reveal it once the new image has been painted (next frame).
+  // macOS may treat an opacity-0 window as occluded and pause frames, so report after 50 ms regardless.
   let sent = false;
   const ready = () => {
     if (sent) return;
     sent = true;
     window.api.ready();
   };
-  requestAnimationFrame(() => requestAnimationFrame(ready));
-  setTimeout(ready, 100);
+  requestAnimationFrame(ready);
+  setTimeout(ready, 50);
 });
 window.api.onHidden(reset);

@@ -28,6 +28,10 @@ const DEFAULT_HOTKEY = 'CommandOrControl+Shift+X';
 const BUNDLE_ID = 'biz.ontheshore.shoreshot'; // build.appId in package.json
 const REPO_URL = 'https://github.com/nguucode/shoreshot';
 const UPDATE_CHECK_MS = 12 * 60 * 60 * 1000;
+// SHORESHOT_TIMING=1: log how long each capture stage takes (run the binary from a terminal).
+const TIMING = !!process.env.SHORESHOT_TIMING;
+let captureT0 = 0;
+const mark = (stage: string) => TIMING && console.log(`[timing] ${stage}: ${Math.round(performance.now() - captureT0)} ms`);
 const isMac = process.platform === 'darwin';
 
 interface CapturePayload {
@@ -371,6 +375,7 @@ async function startCapture(): Promise<void> {
   }
   if (capturing) return;
   capturing = true;
+  captureT0 = performance.now();
   try {
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = display.bounds;
@@ -383,6 +388,7 @@ async function startCapture(): Promise<void> {
     } catch {
       shot = await grabDesktopCapturer(display); // native module failed / no binary for this machine
     }
+    mark(`captured ${shot.pxW}×${shot.pxH}${shot.bgra ? ' (desktopCapturer)' : ''}`);
     if (shot.bitmap.length !== shot.pxW * shot.pxH * 4) {
       throw new Error(`bitmap ${shot.bitmap.length} B does not match ${shot.pxW}×${shot.pxH}`);
     }
@@ -460,6 +466,10 @@ function createOverlay(display: Display): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The overlay sits hidden in the background between captures. Without this Chromium throttles
+      // its timers and frames, so a capture from the hotkey (app inactive) waited noticeably longer
+      // than one from the tray menu (app already active).
+      backgroundThrottling: false,
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
@@ -499,6 +509,7 @@ async function showCapture(display: Display, cap: CapturePayload): Promise<void>
   win.setBounds(display.bounds);
   showOverlay(win);
   win.webContents.send('capture:show', cap);
+  mark('sent to overlay');
   clearTimeout(revealTimer);
   revealTimer = setTimeout(() => reveal(win), 1500); // show anyway if the renderer never answers
 }
@@ -531,6 +542,7 @@ const toImage = (png: Uint8Array) => nativeImage.createFromBuffer(Buffer.from(pn
 ipcMain.on('capture:ready', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win) reveal(win);
+  mark('visible');
 });
 
 ipcMain.on('capture:close', (e) => hideOverlay(BrowserWindow.fromWebContents(e.sender)));

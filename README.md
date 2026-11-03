@@ -15,7 +15,7 @@ Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). R
 | Color | 8 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
-| Other | `Enter` / ✓ button: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
+| Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. |
 | Settings | Tray menu > **Settings…**: capture hotkey, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
 | Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 
@@ -72,6 +72,8 @@ npm start          # run in dev (macOS: allow Screen Recording for the "Electron
 npm run dist:mac   # build .dmg + .zip on a Mac
 npm run dist:win   # build .exe on Windows
 ```
+
+To see how long each capture stage takes, start the app from a terminal with `SHORESHOT_TIMING=1`, e.g. `SHORESHOT_TIMING=1 /Applications/ShoreShot.app/Contents/MacOS/ShoreShot`.
 
 ### Releasing a new version
 
