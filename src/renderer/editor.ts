@@ -66,6 +66,12 @@ const sizeReadout = $<HTMLSpanElement>('sizeReadout');
 const btnUndo = $<HTMLButtonElement>('btnUndo');
 const colorWrap = $('colorCustomWrap');
 
+/** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips use {mod} as a placeholder. */
+const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
+document.querySelectorAll<HTMLElement>('[data-tip*="{mod}"]').forEach((el) => {
+  el.dataset.tip = el.dataset.tip!.replace('{mod}', MOD);
+});
+
 // ---------- helpers ----------
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const norm = (b: Box): Box => ({
@@ -711,8 +717,7 @@ const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height=
 const ICON_PASTE = '<svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h2a2 2 0 0 1 2 2v3M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16h7M18 13l3 3-3 3"/></svg>';
 
 function setupActionButtons(): void {
-  const mac = navigator.platform.toLowerCase().includes('mac');
-  const m = mac ? '⌘' : 'Ctrl+';
+  const m = MOD;
   const copyTitle = `Copy to clipboard (${m}C)`;
   const pasteTitle = `Copy and paste into the previous app (${m}V)`;
   const primary = $<HTMLButtonElement>('btnPrimary');
