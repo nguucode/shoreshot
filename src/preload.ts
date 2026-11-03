@@ -1,4 +1,4 @@
-// Viết dạng script (không import/export) để chạy được trong preload sandbox của Electron.
+// Written as a plain script (no import/export) so it runs in Electron's sandboxed preload.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const electron = require('electron') as typeof import('electron');
 

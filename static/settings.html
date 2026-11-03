@@ -1,18 +1,18 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
-  <title>ShoreShot · Cài đặt</title>
+  <title>ShoreShot Settings</title>
   <link rel="stylesheet" href="settings.css" />
 </head>
 <body>
   <main>
     <section>
-      <label class="label" for="hotkeyField">Phím tắt chụp màn hình</label>
+      <label class="label" for="hotkeyField">Capture hotkey</label>
       <div class="row">
         <button id="hotkeyField" class="hotkey" type="button"></button>
-        <button id="btnReset" class="ghost" type="button">Mặc định</button>
+        <button id="btnReset" class="ghost" type="button">Default</button>
       </div>
       <p id="msg" class="msg" aria-live="polite"></p>
     </section>
@@ -21,8 +21,8 @@
       <label class="check">
         <input id="enterPastes" type="checkbox" />
         <span>
-          <strong>Enter / nút ✓ = copy và tự dán</strong>
-          <small>Chụp xong, ảnh tự dán vào app đang dùng trước đó (Slack, Telegram, Figma…). Tắt thì Enter chỉ copy; vẫn dán nhanh được bằng <kbd id="pasteKey"></kbd>.</small>
+          <strong>Enter / ✓ = copy and paste</strong>
+          <small>After capturing, the image is pasted into the app you were using (Slack, Telegram, Figma…). When off, Enter only copies; <kbd id="pasteKey"></kbd> still copies and pastes.</small>
         </span>
       </label>
     </section>

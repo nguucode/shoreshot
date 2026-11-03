@@ -1,112 +1,111 @@
 # ShoreShot
 
-App chụp màn hình + chú thích cho **macOS và Windows** (Electron + TypeScript). Chạy nền ở thanh menu (macOS) / khay hệ thống (Windows).
+Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). Runs in the background from the menu bar (macOS) / system tray (Windows).
 
-## Tính năng
+## Features
 
-| Nhóm | Chi tiết |
+| Area | Details |
 |---|---|
-| Chụp | Phím tắt toàn cục, mặc định `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows), **đổi được** trong Cài đặt. Kéo để chọn vùng, click 1 phát = cả màn hình. Kéo cạnh hoặc góc khung để chỉnh lại vùng chọn (vẽ rồi vẫn chỉnh được). Chụp màn hình đang có con trỏ chuột. Ảnh xuất ở độ phân giải thật (Retina / HiDPI). |
-| Vẽ khung | Tool `R`. Giữ `Shift` để vẽ hình vuông. Lăn chuột để đổi độ dày viền (1 đến 40px), kể cả khi đang kéo. |
-| Hình tròn / elip | Tool `O`. Giữ `Shift` để vẽ hình tròn. Lăn chuột để đổi độ dày viền. |
-| Đường thẳng | Tool `L`. Lăn chuột để đổi độ dày nét. |
-| Viết chữ | Tool `T`. Click để gõ, `Enter` để xong, `Shift+Enter` xuống dòng, `Esc` huỷ. Lăn chuột để đổi cỡ chữ (10 đến 160px). Click lại vào chữ đã viết để sửa nội dung, cỡ, màu. |
-| Bút tự do | Tool `P`. Nét được làm mượt. Lăn chuột để đổi độ dày nét. |
-| Màu | 8 màu sẵn + bảng màu tuỳ chọn. Áp dụng cho mọi công cụ. Đổi màu khi đang gõ chữ thì chữ đổi màu ngay. |
-| Xuất | `⌘/Ctrl+C`: copy vào clipboard. `⌘/Ctrl+S`: lưu PNG (mặc định vào Pictures). |
-| Copy + tự dán | `⌘V` / `Ctrl+V`: copy rồi tự dán thẳng vào app đang dùng trước khi chụp (Slack, Telegram, Figma…). Trong Cài đặt có thể đặt `Enter` / nút ✓ làm việc này thay cho copy thường. |
-| Khác | `Enter` / nút ✓: copy (hoặc copy + dán, tuỳ cài đặt). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` hoặc `Ctrl+Y` redo, `Esc` thoát. Chuột phải khi chưa vẽ = chọn lại vùng. Menu tray có "Khởi động cùng máy". |
+| Capture | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI). |
+| Rectangle | Tool `R`. Hold `Shift` for a square. Scroll to change the border width (1 to 40px), even while dragging. |
+| Ellipse | Tool `O`. Hold `Shift` for a circle. Scroll to change the border width. |
+| Line | Tool `L`. Scroll to change the stroke width. |
+| Text | Tool `T`. Click to type, `Enter` to finish, `Shift+Enter` for a new line, `Esc` to cancel. Scroll to change the font size (10 to 160px). Click existing text to edit its content, size, color. |
+| Pen | Tool `P`. Strokes are smoothed. Scroll to change the stroke width. |
+| Color | 8 presets + a custom color picker. Applies to every tool. Changing color while typing recolors the text right away. |
+| Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
+| Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). Settings can make `Enter` / the ✓ button do this instead of a plain copy. |
+| Other | `Enter` / ✓ button: copy (or copy + paste, per Settings). `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Hover a toolbar button to see its name and shortcut. The tray menu has "Open at login". |
 
-Lăn chuột lên = to hơn, lăn xuống = nhỏ hơn. Trackpad được cộng dồn để không nhảy quá nhanh.
+Scroll up = bigger, scroll down = smaller. Trackpad scrolling is accumulated so it doesn't jump too fast.
 
-## Cài đặt
+## Install
 
-### Cách 1: một dòng lệnh
+### Option 1: one command
 
-**macOS** (mở Terminal):
+**macOS** (open Terminal):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash
 ```
 
-**Windows** (mở PowerShell, không cần quyền Admin):
+**Windows** (open PowerShell, no Admin needed):
 ```powershell
 irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex
 ```
 
-Script tải bản build mới nhất trong [Releases](https://github.com/nguucode/shoreshot/releases), cài rồi mở app.
+The script downloads the latest build from [Releases](https://github.com/nguucode/shoreshot/releases), installs it and opens the app.
 
-| Việc | macOS | Windows |
+| | macOS | Windows |
 |---|---|---|
-| Cài vào | `/Applications` (không ghi được thì `~/Applications`) | `%LOCALAPPDATA%\Programs\ShoreShot` |
-| Gỡ | `... \| bash -s -- --uninstall` | `& ([scriptblock]::Create((irm <url>))) -Uninstall` |
+| Installs to | `/Applications` (or `~/Applications` if not writable) | `%LOCALAPPDATA%\Programs\ShoreShot` |
+| Uninstall | `... \| bash -s -- --uninstall` | `& ([scriptblock]::Create((irm <url>))) -Uninstall` |
 
-Chạy lại lệnh cài là cập nhật lên bản mới nhất.
+Run the install command again to update to the latest version.
 
-### Cách 2: tải file cài
+### Option 2: download the installer
 
-Vào [Releases](https://github.com/nguucode/shoreshot/releases/latest), tải:
-- Mac Apple Silicon (M1 trở lên): `ShoreShot-x.y.z-mac-arm64.dmg`
+From [Releases](https://github.com/nguucode/shoreshot/releases/latest), download:
+- Mac Apple Silicon (M1 or later): `ShoreShot-x.y.z-mac-arm64.dmg`
 - Mac Intel: `ShoreShot-x.y.z-mac-x64.dmg`
 - Windows: `ShoreShot-Setup-x.y.z.exe`
 
-App chưa ký số (code signing):
-- **macOS** báo "is damaged" hoặc "cannot be opened": chạy `xattr -cr /Applications/ShoreShot.app` rồi mở lại. (Cài bằng Cách 1 thì không gặp lỗi này.)
-- **Windows** SmartScreen cảnh báo: bấm More info > Run anyway.
+The app is not code-signed:
+- **macOS** says "is damaged" or "cannot be opened": run `xattr -cr /Applications/ShoreShot.app` and open it again. (Option 1 avoids this.)
+- **Windows** SmartScreen warning: click More info > Run anyway.
 
-### macOS: quyền cần cấp
+### macOS permissions
 
-- **Screen Recording**: lần chụp đầu macOS sẽ hỏi. Bật ShoreShot trong System Settings > Privacy & Security > Screen & System Audio Recording, rồi thoát hẳn và mở lại app.
-- **Accessibility**: chỉ cần nếu dùng `⌘V` tự dán vào app khác.
+- **Screen Recording**: macOS asks on the first capture. Turn on ShoreShot in System Settings > Privacy & Security > Screen & System Audio Recording, then choose "Quit & Reopen". If you dismissed the macOS prompt, the next capture shows a dialog with a button that opens that settings page.
+- **Accessibility**: only needed for `⌘V` to paste into other apps.
 
-## Phát triển
+## Development
 
-Cần Node.js 18+.
+Requires Node.js 18+.
 
 ```bash
 git clone https://github.com/nguucode/shoreshot.git && cd shoreshot
 npm install
-npm start          # chạy dev (macOS: cấp quyền Screen Recording cho app "Electron")
-npm run dist:mac   # build .dmg + .zip trên Mac
-npm run dist:win   # build .exe trên Windows
+npm start          # run in dev (macOS: allow Screen Recording for the "Electron" app)
+npm run dist:mac   # build .dmg + .zip on a Mac
+npm run dist:win   # build .exe on Windows
 ```
 
-### Phát hành bản mới
+### Releasing a new version
 
-Tăng `version` trong `package.json`, commit, rồi chọn một trong hai:
-- Trên GitHub: tab **Actions** > **build** > **Run workflow** > tick **release** > Run.
-- Hoặc terminal: `git tag v0.1.1 && git push origin v0.1.1`
+Bump `version` in `package.json`, commit, then either:
+- On GitHub: **Actions** > **build** > **Run workflow** > tick **release** > Run.
+- Or from a terminal: `git tag v0.1.3 && git push origin v0.1.3`
 
-GitHub Actions (`.github/workflows/build.yml`) build trên macOS + Windows rồi tự tạo Release kèm file `.dmg`, `.zip`, `.exe`. Script cài đặt luôn lấy release mới nhất.
+GitHub Actions (`.github/workflows/build.yml`) builds on macOS + Windows and creates the Release with the `.dmg`, `.zip`, `.exe` files. The install scripts always pick the latest release.
 
-## Đổi phím tắt
+## Changing the hotkey
 
-Icon trên thanh menu/khay > **Đổi phím tắt…** > bấm vào ô > nhấn tổ hợp mới. App đăng ký ngay; nếu tổ hợp đã bị hệ thống hoặc app khác giữ thì báo lỗi và giữ phím cũ. Cần ít nhất 1 phím bổ trợ, trừ `F1` đến `F24` và `PrintScreen`. Nút **Mặc định** trả về `⌘⇧X` / `Ctrl+Shift+X`.
+Menu bar / tray icon > **Change hotkey…** > click the field > press the new combination. The app registers it right away; if the combination is taken by the system or another app, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** goes back to `⌘⇧X` / `Ctrl+Shift+X`.
 
-Cấu hình lưu ở `config.json` trong thư mục userData (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). Nếu lúc khởi động phím đã lưu bị app khác chiếm, cửa sổ Cài đặt tự mở.
+Settings are stored in `config.json` in the userData folder (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). If the saved hotkey is taken by another app at startup, the Settings window opens automatically.
 
-Lưu ý Windows 11: phím `PrintScreen` thường đã gán cho Snipping Tool. Muốn dùng thì tắt ở Settings > Accessibility > Keyboard > "Use the Print screen key to open screen capture".
+Windows 11 note: `PrintScreen` is usually assigned to Snipping Tool. To use it, turn that off in Settings > Accessibility > Keyboard > "Use the Print screen key to open screen capture".
 
-## Copy + tự dán: quyền cần có
+## Copy + paste: required permissions
 
-- **macOS**: cần quyền **Accessibility** để gửi phím ⌘V (System Settings > Privacy & Security > Accessibility). Lần đầu macOS có thể hỏi thêm "ShoreShot muốn điều khiển System Events", bấm OK. Chưa có quyền thì ảnh vẫn được copy và app báo để sếp tự bấm ⌘V.
-- **Windows**: không cần quyền gì. App gửi Ctrl+V qua PowerShell, nên có độ trễ khoảng nửa giây. Không dán được vào app chạy quyền Administrator khi ShoreShot chạy quyền thường (giới hạn của Windows).
-- Bấm `⌘V` / `Ctrl+V` thì app đợi sếp nhả hết phím mới gửi phím dán, để phím đang giữ không lẫn vào (ví dụ thành `Ctrl+Shift+V`, dán không định dạng).
+- **macOS**: needs **Accessibility** to send ⌘V (System Settings > Privacy & Security > Accessibility). The first time, macOS may also ask "ShoreShot wants to control System Events"; click OK. Without the permission the image is still copied and the app tells you to press ⌘V yourself.
+- **Windows**: no permission needed. The app sends Ctrl+V through PowerShell, so there's about half a second of delay. It can't paste into apps running as Administrator while ShoreShot runs as a normal user (a Windows limitation).
+- On `⌘V` / `Ctrl+V` the app waits until you release every key before sending the paste, so held keys don't mix in (e.g. turning it into `Ctrl+Shift+V`, paste without formatting).
 
-## Cấu trúc
+## Layout
 
 ```
-src/main.ts              process chính: tray, phím tắt + config, chụp, clipboard, tự dán, lưu file
-src/preload.ts           cầu nối IPC an toàn (contextIsolation + sandbox)
-src/renderer/editor.ts   overlay chọn vùng + vẽ chú thích (canvas)
-src/renderer/settings.ts cửa sổ Cài đặt: ghi phím tắt, hành động của Enter
-static/                  HTML/CSS cho overlay và Cài đặt
-scripts/install.sh|.ps1  cài/gỡ bằng terminal (macOS/Windows)
-assets/                  icon tray
-build/icon.png           icon app (electron-builder tự convert sang .icns/.ico)
+src/main.ts              main process: tray, hotkey + config, capture, clipboard, auto-paste, save
+src/preload.ts           safe IPC bridge (contextIsolation + sandbox)
+src/renderer/editor.ts   overlay for selecting an area + drawing annotations (canvas)
+src/renderer/settings.ts Settings window: hotkey recording, what Enter does
+static/                  HTML/CSS for the overlay and Settings
+scripts/install.sh|.ps1  terminal install/uninstall (macOS/Windows)
+assets/                  tray icons
+build/icon.png           app icon (electron-builder converts it to .icns/.ico)
 ```
 
-## Giới hạn hiện tại
+## Current limitations
 
-- Mỗi lần chụp 1 màn hình (màn hình có con trỏ). Chưa chọn vùng vắt qua 2 màn hình.
-- Chưa kéo/resize lại vùng chọn sau khi đã vẽ (chuột phải khi chưa vẽ để chọn lại).
-- Chưa chọn và di chuyển shape đã vẽ (riêng chữ thì click để sửa được).
+- One display per capture (the one under the cursor). A selection can't span two displays.
+- Shapes can't be selected and moved after drawing (text can be clicked to edit).
