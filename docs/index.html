@@ -149,7 +149,7 @@ section.block { padding: 120px 0 0; }
 @keyframes drop { 0%, 8% { opacity: 0; transform: translateY(8px) scale(.96); } 18%, 85% { opacity: 1; transform: none; } 95%, 100% { opacity: 0; } }
 .chat .line { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; color: var(--faint); font-size: 14px; }
 .chat .line span:last-child { display: flex; gap: 4px; }
-.chat kbd, .keys kbd { font: 500 12px var(--mono); min-width: 26px; padding: 3px 7px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; color: var(--fg); text-align: center; }
+.chat kbd { font: 500 12px var(--mono); min-width: 26px; padding: 3px 7px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; color: var(--fg); text-align: center; }
 
 /* Mock: privacy checklist */
 .checks { display: grid; gap: 10px; width: min(300px, 100%); text-align: left; }
@@ -164,18 +164,10 @@ section.block { padding: 120px 0 0; }
 .mini .ic svg { width: 20px; height: 20px; }
 .mini h3 { font-size: 18px; letter-spacing: -.015em; font-weight: 600; margin: 0 0 10px; }
 .mini p { margin: 0; color: var(--muted); font-size: 15px; }
-
-/* Shortcuts */
-.keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.keys > div { background: var(--card); border-radius: 24px; padding: 34px 16px 28px; text-align: center; display: grid; gap: 16px; justify-items: center; align-content: center; transition: transform .3s var(--ease); }
-.keys > div:hover { transform: translateY(-3px); }
-.keys .k { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.keys kbd { font-size: 15px; min-width: 38px; padding: 7px 10px; border-radius: 10px; }
-.keys span { font-size: 14px; color: var(--muted); }
 kbd.sym { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Symbol", sans-serif; }
 
 /* FAQ: soft rounded rows */
-.faq { max-width: 760px; margin: 0 auto; display: grid; gap: 10px; }
+.faq { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 details { background: var(--card); border-radius: 20px; padding: 0 24px; }
 summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; font-weight: 500; }
 summary::-webkit-details-marker { display: none; }
@@ -207,7 +199,6 @@ footer a:hover { color: var(--fg); }
   .cards { grid-template-columns: minmax(0, 1fr); }
   .card { min-height: 0; }
   .minis { grid-template-columns: minmax(0, 1fr); }
-  .keys { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {
   .wrap { padding: 0 16px; }
@@ -220,9 +211,6 @@ footer a:hover { color: var(--fg); }
   .card h3 { font-size: 22px; }
   .tools i { width: 32px; height: 32px; }
   .tools u:nth-of-type(n+4) { display: none; }
-  .keys > div { padding: 26px 10px 22px; }
-  .keys kbd { font-size: 13px; min-width: 30px; padding: 5px 7px; }
-  .keys .k { gap: 4px; }
   .end { margin: 80px 8px 8px; border-radius: 24px; padding: 80px 20px; }
   .stage { margin-top: 48px; }
 }
@@ -241,7 +229,6 @@ footer a:hover { color: var(--fg); }
     <a class="brand" href="./"><img src="icon.png" alt="">ShoreShot</a>
     <nav class="links">
       <a href="#features">Features</a>
-      <a href="#shortcuts">Shortcuts</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/nguucode/shoreshot">GitHub</a>
     </nav>
@@ -347,22 +334,6 @@ footer a:hover { color: var(--fg); }
     </div>
   </section>
 
-  <section class="block" id="shortcuts">
-    <div class="head reveal">
-      <h2>Keys <span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg></span> not menus</h2>
-      <p>Every action has a key. On Windows, use Ctrl instead of ⌘. Full screen and window capture get their hotkeys in Settings.</p>
-    </div>
-    <div class="keys">
-      <div class="reveal"><div class="k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>X</kbd></div><span>Capture an area</span></div>
-      <div class="reveal" style="--i:1"><div class="k"><kbd>R</kbd><kbd>O</kbd><kbd>L</kbd><kbd>T</kbd><kbd>P</kbd></div><span>Box, ellipse, line, text, pen</span></div>
-      <div class="reveal" style="--i:2"><div class="k"><kbd>⌘</kbd><kbd>C</kbd></div><span>Copy</span></div>
-      <div class="reveal" style="--i:3"><div class="k"><kbd>⌘</kbd><kbd>V</kbd></div><span>Paste into the last app</span></div>
-      <div class="reveal"><div class="k"><kbd>⌘</kbd><kbd>S</kbd></div><span>Save PNG</span></div>
-      <div class="reveal" style="--i:1"><div class="k"><kbd>⌘</kbd><kbd>Z</kbd></div><span>Undo</span></div>
-      <div class="reveal" style="--i:2"><div class="k"><kbd class="sym">⌫</kbd></div><span>Delete the hovered shape</span></div>
-      <div class="reveal" style="--i:3"><div class="k"><kbd>Esc</kbd></div><span>Close</span></div>
-    </div>
-  </section>
 
   <section class="block" id="faq">
     <div class="head reveal">
@@ -388,7 +359,7 @@ footer a:hover { color: var(--fg); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14"/></svg>
       <span class="dl-label">Download</span>
     </a>
-    <a class="btn glass" href="https://github.com/nguucode/shoreshot/releases/latest">Intel Mac and other builds</a>
+    <a class="btn glass" href="https://github.com/nguucode/shoreshot/releases">View releases</a>
   </div>
 </section>
 
