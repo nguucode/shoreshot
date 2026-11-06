@@ -42,7 +42,8 @@ a { color: inherit; text-decoration: none; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
 .brand img { width: 22px; height: 22px; border-radius: 6px; }
 .links { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 28px; font-size: 14px; color: color-mix(in srgb, var(--fg) 80%, transparent); }
-.links a:hover { color: var(--fg); }
+.links a:hover, .links a[aria-current] { color: var(--fg); }
+.links a[aria-current] { font-weight: 500; }
 
 /* Buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 24px; border-radius: 999px; font: 500 15px var(--font); transition: transform .25s var(--ease), opacity .2s; }
@@ -234,6 +235,7 @@ footer a:hover { color: var(--fg); }
   <div class="bar">
     <a class="brand" href="./"><img src="icon.png" alt="">ShoreShot</a>
     <nav class="links">
+      <a href="./" aria-current="page">Home</a>
       <a href="#features">Features</a>
       <a href="#faq">FAQ</a>
       <a href="release/">Release</a>
