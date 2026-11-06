@@ -92,6 +92,8 @@ Bump `version` in `package.json`, commit, then either:
 
 GitHub Actions (`.github/workflows/build.yml`) builds on macOS + Windows and creates the Release with the `.dmg`, `.zip`, `.exe` files. The install scripts always pick the latest release.
 
+The website's [release page](https://shoreshot.ontheshore.biz/release/) reads the Releases from GitHub, so a new version appears there on its own. It shows everything in the release body except the Install section. The generated notes come from PR titles, so write those for users, and add a section to the release on GitHub for anything longer.
+
 #### macOS signing certificate
 
 macOS ties Screen Recording / Accessibility permissions to the app's signature, so every release must be signed with the same certificate (`scripts/after-pack.js`). The build reads it from two repository secrets: `MAC_CERT_P12` (base64 of a `.p12` holding a self-signed code-signing certificate whose name contains "ShoreShot") and `MAC_CERT_PASSWORD`. Without them the build falls back to ad-hoc signing, and users get asked for permissions again after every update. Keep the `.p12` safe: a new certificate also resets everyone's permissions once.
