@@ -129,3 +129,7 @@ docs/                    website (GitHub Pages, shoreshot.ontheshore.biz); docs/
 - One display per capture (the one under the cursor). A selection can't span two displays.
 - Shapes can't be moved after drawing (text can be clicked to edit, anything can be deleted).
 - Window capture crops what is on screen inside the window's frame, so anything covering that window is included.
+
+## Credits
+
+The monitor on the website is rendered from [PC Monitor 27 inch](https://sketchfab.com/3d-models/pc-monitor-27-inch-06fb18eec19245d4811c4c3c8c7ea567) by [Annelida](https://sketchfab.com/Annelida), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changes: dark frame and stand, rendered to a flat image.
