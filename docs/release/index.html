@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release notes – ShoreShot</title>
+<meta name="description" content="What changed in each version of ShoreShot, the free screenshot tool for macOS and Windows.">
+<meta property="og:title" content="Release notes – ShoreShot">
+<meta property="og:description" content="What changed in each version of ShoreShot.">
+<link rel="icon" href="../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ponytail: tokens, nav, buttons and footer are copied from ../index.html. Move them to a shared stylesheet if a third page appears. */
+:root {
+  --bg: #fff; --fg: #111113; --muted: #6b6b73; --faint: #a1a1aa; --line: #ececee; --card: #f5f5f6; --raised: #fff;
+  --sky-1: #6f8fc9; --sky-2: #a9c3e6;
+  --ink: #111113; --on-ink: #fff;
+  --font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0b0d; --fg: #f4f4f5; --muted: #a1a1aa; --faint: #63636b; --line: #222226; --card: #151518; --raised: #1c1c20;
+    --sky-1: #1c2d52; --sky-2: #20365f;
+    --ink: #f4f4f5; --on-ink: #111113;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; overflow-x: clip; }
+a { color: inherit; text-decoration: none; }
+.nav { position: fixed; top: 24px; left: 24px; right: 24px; z-index: 10; display: flex; justify-content: center; pointer-events: none; }
+.nav .bar { position: relative; pointer-events: auto; width: 100%; max-width: 1180px; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; padding: 0 8px 0 20px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px); box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 8px 30px -12px rgba(30, 50, 90, .25); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+.brand img { width: 22px; height: 22px; border-radius: 6px; }
+.links { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 28px; font-size: 14px; color: color-mix(in srgb, var(--fg) 80%, transparent); }
+.links a:hover, .links a[aria-current] { color: var(--fg); }
+.links a[aria-current] { font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 24px; border-radius: 999px; font: 500 15px var(--font); transition: transform .25s, opacity .2s; }
+.btn:active { transform: scale(.97); }
+.btn.ink { background: var(--ink); color: var(--on-ink); box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .5); }
+.btn.ink:hover { opacity: .88; }
+.btn.small { height: 40px; padding: 0 18px; font-size: 14px; }
+
+.hero { margin: 12px; border-radius: 32px; padding: 150px 24px 72px; text-align: center; color: #fff; background: linear-gradient(180deg, var(--sky-1), var(--sky-2)); }
+.hero h1 { font-size: clamp(40px, 6vw, 72px); line-height: 1; letter-spacing: -.045em; font-weight: 600; margin: 0 0 16px; text-shadow: 0 2px 30px rgba(30, 50, 90, .15); }
+.hero p { font-size: 19px; line-height: 1.5; margin: 0 auto; max-width: 42ch; color: rgba(255, 255, 255, .9); text-wrap: balance; }
+
+.list { max-width: 760px; margin: 64px auto 0; padding: 0 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.rel { background: var(--card); border-radius: 24px; padding: 28px; }
+.rel header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 14px; }
+.rel h2 { font-size: 24px; line-height: 1.2; letter-spacing: -.02em; font-weight: 600; margin: 0; }
+.rel time { font-size: 14px; color: var(--muted); }
+.tag { font: 500 12px var(--font); padding: 3px 10px; border-radius: 999px; background: var(--ink); color: var(--on-ink); }
+.rel h3 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+.rel ul { margin: 0; padding-left: 20px; }
+.rel li + li { margin-top: 6px; }
+.rel p { margin: 0 0 8px; color: var(--muted); }
+.rel code { font: 13px var(--mono); padding: 1px 6px; border-radius: 6px; background: var(--raised); }
+.rel footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 20px; padding: 0; font-size: 14px; color: var(--muted); }
+.rel footer a:not(.btn):hover { color: var(--fg); }
+.state { text-align: center; color: var(--muted); padding: 40px 0; }
+.state a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+
+body > footer { padding: 72px 24px 36px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 24px; }
+body > footer a:hover { color: var(--fg); }
+
+@media (max-width: 900px) { .links { display: none; } }
+@media (max-width: 560px) {
+  .hero { margin: 8px; border-radius: 24px; padding: 120px 16px 56px; }
+  .hero p { font-size: 17px; }
+  .nav { left: 16px; right: 16px; top: 16px; }
+  .nav .bar { padding-left: 16px; }
+  .list { margin-top: 40px; padding: 0 16px; }
+  .rel { padding: 24px 20px; }
+}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="bar">
+    <a class="brand" href="../"><img src="../icon.png" alt="">ShoreShot</a>
+    <nav class="links">
+      <a href="../#features">Features</a>
+      <a href="../#faq">FAQ</a>
+      <a href="./" aria-current="page">Release</a>
+      <a href="https://github.com/nguucode/shoreshot">GitHub</a>
+    </nav>
+    <a class="btn ink small dl-main" href="https://github.com/nguucode/shoreshot/releases/latest">Download</a>
+  </div>
+</header>
+
+<section class="hero">
+  <h1>Release notes</h1>
+  <p>What changed in each version of ShoreShot.</p>
+</section>
+
+<main class="list" id="list" aria-live="polite">
+  <p class="state">Loading releases…</p>
+  <noscript><p class="state">See every version on <a href="https://github.com/nguucode/shoreshot/releases">GitHub</a>.</p></noscript>
+</main>
+
+<footer>
+  <span>ShoreShot · MIT license</span>
+  <a href="https://github.com/nguucode/shoreshot">Source</a>
+  <a href="./">Releases</a>
+  <a href="https://github.com/nguucode/shoreshot/issues/new">Report an issue</a>
+  <span>Made by Ngưu Nguyễn</span>
+</footer>
+
+<script>
+const REPO = 'nguucode/shoreshot';
+const isWin = /Windows/.test(navigator.userAgent);
+const list = document.getElementById('list');
+const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+
+// Turns a release body into HTML: drops the Install and New Contributors sections, the PR credits and the changelog link.
+function notes(body) {
+  const out = [];
+  let skip = false, inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of (body || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) {
+      closeList();
+      skip = /^(install|cài đặt|new contributors)/i.test(h[1]);
+      if (!skip && !/^what'?s changed/i.test(h[1])) out.push(`<h3>${inline(h[1])}</h3>`);
+      continue;
+    }
+    if (skip || !line || line.startsWith('```') || /^\*\*Full Changelog/i.test(line)) continue;
+    const li = line.match(/^[-*]\s+(.*)/);
+    if (li) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inline(li[1].replace(/\s+by @\S+ in https?:\S+$/, ''))}</li>`);
+    } else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join('') || '<p>No notes for this version.</p>';
+}
+
+function failed() {
+  list.innerHTML = `<p class="state">Couldn't load the releases right now. See every version on <a href="https://github.com/${REPO}/releases">GitHub</a>.</p>`;
+}
+
+fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`).then((r) => { if (!r.ok) throw r; return r.json(); }).then((rels) => {
+  if (!rels.length) return failed();
+  const latest = rels.find((r) => !r.prerelease);
+  const pick = (r) => r.assets.find((x) => (isWin ? /\.exe$/ : /mac-arm64\.dmg$/).test(x.name));
+  list.innerHTML = rels.map((r) => {
+    const d = new Date(r.published_at);
+    const isLatest = r === latest, a = pick(r);
+    return `<article class="rel" id="${esc(r.tag_name)}">
+      <header><h2>${esc(r.name || r.tag_name)}</h2>${isLatest ? '<span class="tag">Latest</span>' : ''}<time datetime="${esc(r.published_at)}">${d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</time></header>
+      ${notes(r.body)}
+      <footer>${isLatest && a ? `<a class="btn ink small" href="${esc(a.browser_download_url)}">Download for ${isWin ? 'Windows' : 'Mac'}</a>` : ''}<a href="${esc(r.html_url)}">All downloads on GitHub</a></footer>
+    </article>`;
+  }).join('');
+  if (latest) { const a = pick(latest); if (a) document.querySelector('.nav .dl-main').href = a.browser_download_url; }
+  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+}).catch(failed);
+</script>
+</body>
+</html>
