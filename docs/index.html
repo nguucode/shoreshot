@@ -138,12 +138,12 @@ section.block { padding: 120px 0 0; }
 .tools { display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 16px; background: rgba(28, 28, 30, .94); box-shadow: 0 24px 50px -20px rgba(0, 0, 0, .5); }
 .tools i { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: #f2f2f7; }
 .tools i svg { width: 18px; height: 18px; }
-.tools i:nth-child(-n+5) { animation: tool 7.5s ease-in-out infinite; }
-.tools i:nth-child(2) { animation-delay: 1.5s; }
-.tools i:nth-child(3) { animation-delay: 3s; }
-.tools i:nth-child(4) { animation-delay: 4.5s; }
-.tools i:nth-child(5) { animation-delay: 6s; }
-@keyframes tool { 0%, 24%, 100% { background: transparent; } 4%, 20% { background: #3b82f6; } }
+.tools i:nth-child(-n+5) { animation: tool 10s ease-in-out infinite; }
+.tools i:nth-child(2) { animation-delay: 2s; }
+.tools i:nth-child(3) { animation-delay: 4s; }
+.tools i:nth-child(4) { animation-delay: 6s; }
+.tools i:nth-child(5) { animation-delay: 8s; }
+@keyframes tool { 0%, 23%, 100% { background: transparent; } 3%, 20% { background: #3b82f6; } }
 .tools b { width: 1px; height: 22px; background: rgba(255, 255, 255, .15); margin: 0 4px; }
 .tools u { width: 18px; height: 18px; border-radius: 50%; background: var(--c); margin: 0 3px; }
 .tools u:first-of-type { box-shadow: 0 0 0 2px rgba(28, 28, 30, .94), 0 0 0 4px #fff; }
@@ -409,7 +409,10 @@ const hero = document.querySelector('.hero'), demo = document.querySelector('.de
 watch(hero, loops(hero, true), 0);
 const demoLoops = loops(demo);
 watch(demo, demoLoops, .4, () => demoLoops.forEach((a) => (a.currentTime = 0)));
-document.querySelectorAll('.menu, .tools, .chat').forEach((el) => watch(el, loops(el), 0));
+// The menu and toolbar share one clock, so their highlights always move together.
+const menu = document.querySelector('.menu');
+watch(menu, [...loops(menu), ...loops(document.querySelector('.tools'))], 0);
+watch(document.querySelector('.chat'), loops(document.querySelector('.chat')), 0);
 </script>
 </body>
 </html>
