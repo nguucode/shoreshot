@@ -7,7 +7,7 @@
 <meta name="description" content="A free screenshot tool for macOS and Windows. Press one hotkey, mark it up, paste it back into the app you were using.">
 <meta property="og:title" content="ShoreShot – capture, mark up, paste">
 <meta property="og:description" content="A free screenshot tool for macOS and Windows.">
-<meta property="og:image" content="https://shoreshot.ontheshore.biz/shot-2.jpg?v=figma">
+<meta property="og:image" content="https://shoreshot.ontheshore.biz/shot-2.jpg?v=full">
 <link rel="icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,17 +74,17 @@ a { color: inherit; text-decoration: none; }
 /* Demo: three real frames of the overlay. Frame 1 is revealed like a selection being dragged, frame 2 fades in the annotations. */
 /* The screen spans 96.94% of the image: 67.05vw makes it 65vw. The height cap keeps all of it visible below the nav. */
 /* The panel's bottom edge cuts the monitor just below the frame, through the stand */
-.stage { width: min(67.05vw, (100vh - 120px) * 1.834, 100%); aspect-ratio: 2400 / 1456; min-height: 0; margin: 64px auto 0; clip-path: inset(-100px -100px 0); }
+.stage { width: min(67.05vw, (100vh - 120px) * 1.65, 100%); aspect-ratio: 2400 / 1603; min-height: 0; margin: 64px auto 0; clip-path: inset(-100px -100px 0); }
 .monitor { position: relative; }
 .monitor > img { display: block; width: 100%; height: auto; filter: drop-shadow(0 30px 40px rgba(30, 50, 90, .3)); }
 /* Screen rectangle measured from the 3D model */
-.demo { position: absolute; margin: 0; left: 1.528%; right: 1.528%; top: 2.113%; bottom: 22.45%; overflow: hidden; background: #8a8a8a; }
+.demo { position: absolute; margin: 0; left: 1.528%; right: 1.528%; top: 2.024%; bottom: 20.759%; overflow: hidden; background: #8a8a8a; }
 .demo img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .demo .f1 { animation: drag 10s infinite; }
 .demo .f2 { animation: mark 10s infinite; }
 @keyframes drag {
-  0%, 12% { clip-path: inset(5.91% 76.51% 94.09% 23.49%); opacity: 1; animation-timing-function: var(--ease); }
-  34%, 35.9% { clip-path: inset(5.91% 19.46% 21.15% 23.49%); }
+  0%, 12% { clip-path: inset(11.13% 76.01% 88.87% 23.99%); opacity: 1; animation-timing-function: var(--ease); }
+  34%, 35.9% { clip-path: inset(11.13% 20.06% 23.87% 23.99%); }
   36%, 90% { clip-path: inset(0); opacity: 1; }
   96%, 100% { clip-path: inset(0); opacity: 0; }
 }
@@ -92,9 +92,9 @@ a { color: inherit; text-decoration: none; }
 .track { position: absolute; inset: 0; pointer-events: none; animation: track 10s infinite; }
 .track svg { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; color: #fff; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6)); }
 @keyframes track {
-  0%, 12% { transform: translate(23.49%, 5.91%); opacity: 1; animation-timing-function: var(--ease); }
-  34% { transform: translate(80.54%, 78.85%); opacity: 1; }
-  38%, 100% { transform: translate(80.54%, 78.85%); opacity: 0; }
+  0%, 12% { transform: translate(23.99%, 11.13%); opacity: 1; animation-timing-function: var(--ease); }
+  34% { transform: translate(79.94%, 76.13%); opacity: 1; }
+  38%, 100% { transform: translate(79.94%, 76.13%); opacity: 0; }
 }
 
 /* Section headings: centered, with a small icon tile set into the sentence */
@@ -192,7 +192,7 @@ footer a:hover { color: var(--fg); }
 
 @media (max-width: 900px) {
   .links { display: none; }
-  .stage { width: min(82.52vw, (100vh - 120px) * 1.834, 100%); }
+  .stage { width: min(82.52vw, (100vh - 120px) * 1.65, 100%); }
   .cards { grid-template-columns: minmax(0, 1fr); }
   .card { min-height: 0; }
   .minis { grid-template-columns: minmax(0, 1fr); }
@@ -255,11 +255,11 @@ footer a:hover { color: var(--fg); }
 
   <div class="stage rise" style="--i:4">
     <div class="monitor">
-    <img src="monitor.webp" width="2400" height="1735" alt="" decoding="async">
+    <img src="monitor.webp?v=1610" width="2400" height="1883" alt="" decoding="async">
     <figure class="demo" role="img" aria-label="ShoreShot over a design file in Figma: an area is selected and marked with a red box, a green circle and red text, with the tools bar and the actions bar on its right">
-      <img src="shot-0.jpg?v=figma" width="1984" height="1116" alt="">
-      <img class="f1" src="shot-1.jpg?v=figma" width="1984" height="1116" alt="">
-      <img class="f2" src="shot-2.jpg?v=figma" width="1984" height="1116" alt="">
+      <img src="shot-0.jpg?v=full" width="1984" height="1240" alt="">
+      <img class="f1" src="shot-1.jpg?v=full" width="1984" height="1240" alt="">
+      <img class="f2" src="shot-2.jpg?v=full" width="1984" height="1240" alt="">
       <div class="track"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M2 12h20"/></svg></div>
     </figure>
     </div>
