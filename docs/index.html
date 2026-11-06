@@ -38,10 +38,10 @@ a { color: inherit; text-decoration: none; }
 
 /* Floating pill nav */
 .nav { position: fixed; top: 24px; left: 24px; right: 24px; z-index: 10; display: flex; justify-content: center; pointer-events: none; }
-.nav .bar { pointer-events: auto; width: 100%; max-width: 1180px; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; padding: 0 8px 0 20px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px); box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 8px 30px -12px rgba(30, 50, 90, .25); }
+.nav .bar { position: relative; pointer-events: auto; width: 100%; max-width: 1180px; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; padding: 0 8px 0 20px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px); box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 8px 30px -12px rgba(30, 50, 90, .25); }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
 .brand img { width: 22px; height: 22px; border-radius: 6px; }
-.links { display: flex; gap: 28px; font-size: 14px; color: color-mix(in srgb, var(--fg) 80%, transparent); }
+.links { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 28px; font-size: 14px; color: color-mix(in srgb, var(--fg) 80%, transparent); }
 .links a:hover { color: var(--fg); }
 
 /* Buttons */
@@ -98,16 +98,6 @@ a { color: inherit; text-decoration: none; }
   34% { transform: translate(88.91%, 77.96%); opacity: 1; }
   38%, 100% { transform: translate(88.91%, 77.96%); opacity: 0; }
 }
-.steps { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 22px; font: 12px var(--mono); color: var(--faint); }
-.steps span { padding: 6px 12px; border-radius: 999px; }
-.steps span:nth-child(1) { animation: s1 10s infinite; }
-.steps span:nth-child(2) { animation: s2 10s infinite; }
-.steps span:nth-child(3) { animation: s3 10s infinite; }
-.steps span:nth-child(4) { animation: s4 10s infinite; }
-@keyframes s1 { 0%, 11% { color: var(--fg); background: var(--card); } 13%, 100% { color: var(--faint); background: transparent; } }
-@keyframes s2 { 0%, 12% { color: var(--faint); background: transparent; } 13%, 44% { color: var(--fg); background: var(--card); } 46%, 100% { color: var(--faint); background: transparent; } }
-@keyframes s3 { 0%, 45% { color: var(--faint); background: transparent; } 46%, 68% { color: var(--fg); background: var(--card); } 70%, 100% { color: var(--faint); background: transparent; } }
-@keyframes s4 { 0%, 69% { color: var(--faint); background: transparent; } 70%, 94% { color: var(--fg); background: var(--card); } 96%, 100% { color: var(--faint); background: transparent; } }
 
 /* Section headings: centered, with a small icon tile set into the sentence */
 section.block { padding: 120px 0 0; }
@@ -291,7 +281,6 @@ footer a:hover { color: var(--fg); }
     </div>
   </div>
 </section>
-<div class="steps wrap" aria-hidden="true"><span>⌘⇧X</span><span>drag</span><span>mark up</span><span>⌘V into chat</span></div>
 
 <main class="wrap">
   <section class="block" id="features">
