@@ -77,8 +77,9 @@ a { color: inherit; text-decoration: none; }
 .ver { margin-top: 12px; font: 12px var(--mono); color: rgba(255, 255, 255, .75); min-height: 18px; }
 
 /* Demo: three real frames of the overlay. Frame 1 is revealed like a selection being dragged, frame 2 fades in the annotations. */
-/* The monitor screen spans 96.94% of the image, so 82.52vw makes the screen 80vw */
-.stage { width: min(82.52vw, 100%); margin: 64px auto 0; }
+/* The screen spans 96.94% of the image: 67.05vw makes it 65vw. The height cap keeps all of it visible below the nav. */
+/* The panel's bottom edge cuts the monitor just below the frame, through the stand */
+.stage { width: min(67.05vw, (100vh - 120px) * 1.834, 100%); aspect-ratio: 2400 / 1456; min-height: 0; margin: 64px auto 0; clip-path: inset(-100px -100px 0); }
 .monitor { position: relative; }
 .monitor > img { display: block; width: 100%; height: auto; filter: drop-shadow(0 30px 40px rgba(30, 50, 90, .3)); }
 /* Screen rectangle measured from the 3D model */
@@ -214,6 +215,7 @@ footer a:hover { color: var(--fg); }
 
 @media (max-width: 900px) {
   .links { display: none; }
+  .stage { width: min(82.52vw, (100vh - 120px) * 1.834, 100%); }
   .cards { grid-template-columns: minmax(0, 1fr); }
   .card { min-height: 0; }
   .minis { grid-template-columns: minmax(0, 1fr); }
