@@ -126,10 +126,10 @@ section.block { padding: 120px 0 0; }
 /* Mock: tray menu */
 .menu { width: min(300px, 100%); background: var(--raised); border-radius: 14px; padding: 6px; box-shadow: 0 24px 50px -20px rgba(30, 50, 90, .35), 0 0 0 1px var(--line); font-size: 14px; text-align: left; }
 .menu div { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 8px; }
-.menu div:nth-child(-n+3) { animation: pick 6s infinite; }
+.menu div:nth-child(-n+3) { animation: pick 6s ease-in-out infinite; }
 .menu div:nth-child(2) { animation-delay: 2s; }
 .menu div:nth-child(3) { animation-delay: 4s; }
-@keyframes pick { 0%, 30% { background: var(--accent); color: #fff; } 33%, 100% { background: transparent; color: inherit; } }
+@keyframes pick { 0%, 38.34%, 100% { background: transparent; color: inherit; } 5%, 33.33% { background: var(--accent); color: #fff; } }
 .menu div:nth-child(-n+3) kbd { color: inherit; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
 .menu kbd { font: 12px var(--mono); color: var(--faint); }
@@ -138,12 +138,12 @@ section.block { padding: 120px 0 0; }
 .tools { display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 16px; background: rgba(28, 28, 30, .94); box-shadow: 0 24px 50px -20px rgba(0, 0, 0, .5); }
 .tools i { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: #f2f2f7; }
 .tools i svg { width: 18px; height: 18px; }
-.tools i:nth-child(-n+5) { animation: tool 7.5s infinite; }
+.tools i:nth-child(-n+5) { animation: tool 7.5s ease-in-out infinite; }
 .tools i:nth-child(2) { animation-delay: 1.5s; }
 .tools i:nth-child(3) { animation-delay: 3s; }
 .tools i:nth-child(4) { animation-delay: 4.5s; }
 .tools i:nth-child(5) { animation-delay: 6s; }
-@keyframes tool { 0%, 18% { background: #3b82f6; } 20%, 100% { background: transparent; } }
+@keyframes tool { 0%, 24%, 100% { background: transparent; } 4%, 20% { background: #3b82f6; } }
 .tools b { width: 1px; height: 22px; background: rgba(255, 255, 255, .15); margin: 0 4px; }
 .tools u { width: 18px; height: 18px; border-radius: 50%; background: var(--c); margin: 0 3px; }
 .tools u:first-of-type { box-shadow: 0 0 0 2px rgba(28, 28, 30, .94), 0 0 0 4px #fff; }
