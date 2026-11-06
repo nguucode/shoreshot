@@ -132,4 +132,4 @@ docs/                    website (GitHub Pages, shoreshot.ontheshore.biz); docs/
 
 ## Credits
 
-The monitor on the website is rendered from [PC Monitor 27 inch](https://sketchfab.com/3d-models/pc-monitor-27-inch-06fb18eec19245d4811c4c3c8c7ea567) by [Annelida](https://sketchfab.com/Annelida), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changes: dark frame and stand, rendered to a flat image.
+The monitor on the website is rendered from [PC Monitor 27 inch](https://sketchfab.com/3d-models/pc-monitor-27-inch-06fb18eec19245d4811c4c3c8c7ea567) by [Annelida](https://sketchfab.com/Annelida), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changes: dark frame and stand, screen stretched to 16:10, rendered to a flat image.
