@@ -62,19 +62,16 @@ a { color: inherit; text-decoration: none; }
 .hero .lede { font-size: 19px; line-height: 1.5; max-width: 62ch; margin: 0 auto 34px; color: rgba(255, 255, 255, .9); text-wrap: balance; }
 .hero .lede b { color: #fff; font-weight: 600; }
 .cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
-.cmd { display: flex; align-items: center; gap: 6px; max-width: 520px; margin: 22px auto 0; height: 44px; padding: 0 6px 0 16px; border-radius: 999px; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .3); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25); color: #fff; }
-.cmd select { flex: none; font: 500 12px var(--font); color: #fff; background: none; border: 0; padding: 0 2px; cursor: pointer; }
-.cmd select option { color: #111; }
-.cmd code { flex: 1; min-width: 0; text-align: left; font: 12.5px var(--mono); overflow-x: auto; white-space: nowrap; scrollbar-width: none; opacity: .95; }
+.cmd { display: flex; align-items: center; gap: 6px; max-width: 520px; margin: 22px auto 0; height: 44px; padding: 0 6px 0 18px; border-radius: 999px; background: var(--card); color: var(--fg); }
+.cmd code { flex: 1; min-width: 0; text-align: left; font: 12.5px var(--mono); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .cmd code::-webkit-scrollbar { display: none; }
-.copy { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .22); color: #fff; cursor: pointer; transition: background .2s, transform .2s var(--ease); }
-.copy:hover { background: rgba(255, 255, 255, .34); }
+.copy { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 999px; background: var(--line); color: var(--fg); cursor: pointer; transition: background .2s, transform .2s var(--ease); }
+.copy:hover { background: color-mix(in srgb, var(--fg) 14%, transparent); }
 .copy:active { transform: scale(.92); }
 .copy svg { width: 15px; height: 15px; }
 .copy .done { display: none; }
 .copy.ok .idle { display: none; }
 .copy.ok .done { display: block; }
-.ver { margin-top: 12px; font: 12px var(--mono); color: rgba(255, 255, 255, .75); min-height: 18px; }
 
 /* Demo: three real frames of the overlay. Frame 1 is revealed like a selection being dragged, frame 2 fades in the annotations. */
 /* The screen spans 96.94% of the image: 67.05vw makes it 65vw. The height cap keeps all of it visible below the nav. */
@@ -201,8 +198,9 @@ details pre { font: 12.5px var(--mono); color: var(--fg); background: var(--rais
 /* Closing panel */
 .end { margin: 120px 12px 12px; border-radius: 32px; padding: 110px 24px; text-align: center; color: #fff; background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 100%); }
 .end h2 { font-size: clamp(36px, 5.4vw, 64px); line-height: 1.02; letter-spacing: -.045em; font-weight: 600; margin: 0 auto 32px; max-width: 16ch; text-wrap: balance; text-shadow: 0 2px 30px rgba(30, 50, 90, .15); }
-.end .btn.glass { background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .35); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.end .btn.glass:hover { background: rgba(255, 255, 255, .3); }
+.btn.glass { background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .35); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.btn.glass:hover { background: rgba(255, 255, 255, .3); }
+.hero .btn.glass { color: var(--fg); }
 
 footer { padding: 28px 24px 36px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 24px; }
 footer a:hover { color: var(--fg); }
@@ -269,18 +267,16 @@ footer a:hover { color: var(--fg); }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14"/></svg>
       <span class="dl-label">Download</span>
     </a>
-    <a class="btn soft" href="https://github.com/nguucode/shoreshot#readme">View docs</a>
+    <a class="btn glass" href="https://github.com/nguucode/shoreshot#readme">View docs</a>
   </div>
   <div class="rise" style="--i:3">
     <div class="cmd">
-      <select id="os" aria-label="Operating system"><option value="mac">macOS</option><option value="win">Windows</option></select>
       <code id="cmd">curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash</code>
       <button class="copy" id="copyCmd" type="button" aria-label="Copy install command">
         <svg class="idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>
         <svg class="done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
       </button>
     </div>
-    <div class="ver" id="ver"></div>
   </div>
 
   <div class="stage rise" style="--i:4">
@@ -417,13 +413,8 @@ footer a:hover { color: var(--fg); }
 
 <script>
 const isWin = /Windows/.test(navigator.userAgent);
-const CMD = {
-  mac: 'curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash',
-  win: 'irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex',
-};
-const os = document.getElementById('os'), cmd = document.getElementById('cmd');
-os.onchange = () => (cmd.textContent = CMD[os.value]);
-if (isWin) { os.value = 'win'; os.onchange(); }
+const cmd = document.getElementById('cmd');
+if (isWin) cmd.textContent = 'irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex';
 
 const copy = document.getElementById('copyCmd');
 copy.onclick = async () => {
@@ -437,7 +428,6 @@ document.querySelectorAll('.dl-label').forEach((l) => (l.textContent = isWin ? '
 fetch('https://api.github.com/repos/nguucode/shoreshot/releases/latest').then((r) => r.json()).then((rel) => {
   const a = rel.assets.find((x) => (isWin ? /\.exe$/ : /mac-arm64\.dmg$/).test(x.name));
   if (a) document.querySelectorAll('.dl-main').forEach((l) => (l.href = a.browser_download_url));
-  document.getElementById('ver').textContent = `${rel.tag_name} · ${rel.published_at.slice(0, 10)}`;
 }).catch(() => {});
 
 const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
