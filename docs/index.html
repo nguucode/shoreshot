@@ -77,12 +77,12 @@ a { color: inherit; text-decoration: none; }
 .ver { margin-top: 12px; font: 12px var(--mono); color: rgba(255, 255, 255, .75); min-height: 18px; }
 
 /* Demo: three real frames of the overlay. Frame 1 is revealed like a selection being dragged, frame 2 fades in the annotations. */
-/* The iMac screen spans 93.16% of the image, so 85.87vw makes the screen 80vw */
-.stage { width: min(85.87vw, 100%); margin: 64px auto 0; }
-.imac { position: relative; }
-.imac > img { display: block; width: 100%; height: auto; filter: drop-shadow(0 30px 40px rgba(30, 50, 90, .3)); }
+/* The monitor screen spans 96.94% of the image, so 82.52vw makes the screen 80vw */
+.stage { width: min(82.52vw, 100%); margin: 64px auto 0; }
+.monitor { position: relative; }
+.monitor > img { display: block; width: 100%; height: auto; filter: drop-shadow(0 30px 40px rgba(30, 50, 90, .3)); }
 /* Screen rectangle measured from the 3D model */
-.demo { position: absolute; margin: 0; left: 3.42%; right: 3.42%; top: 4.657%; bottom: 34.783%; overflow: hidden; background: #8a8a8a; }
+.demo { position: absolute; margin: 0; left: 1.528%; right: 1.528%; top: 2.113%; bottom: 22.45%; overflow: hidden; background: #8a8a8a; }
 .demo img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .demo .f1 { animation: drag 10s infinite; }
 .demo .f2 { animation: mark 10s infinite; }
@@ -282,8 +282,8 @@ footer a:hover { color: var(--fg); }
   </div>
 
   <div class="stage rise" style="--i:4">
-    <div class="imac">
-    <img src="imac.webp" width="2400" height="2062" alt="" decoding="async">
+    <div class="monitor">
+    <img src="monitor.webp" width="2400" height="1735" alt="" decoding="async">
     <figure class="demo" role="img" aria-label="ShoreShot over a web page: an area is selected and marked with a red box, a green circle and red text, with the tools bar and the actions bar on its right">
       <img src="shot-0.jpg" width="1984" height="1116" alt="">
       <img class="f1" src="shot-1.jpg" width="1984" height="1116" alt="">
@@ -410,7 +410,7 @@ footer a:hover { color: var(--fg); }
   <a href="https://github.com/nguucode/shoreshot">Source</a>
   <a href="https://github.com/nguucode/shoreshot/releases">Releases</a>
   <a href="https://github.com/nguucode/shoreshot/issues/new">Report an issue</a>
-  <span>Rendered from <a href="https://sketchfab.com/3d-models/imac-b40b903fe1d24bd59fde71934c4cef59">Imac</a> by <a href="https://sketchfab.com/dannzjs">dannzjs</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></span>
+  <span>Rendered from <a href="https://sketchfab.com/3d-models/pc-monitor-27-inch-06fb18eec19245d4811c4c3c8c7ea567">PC Monitor 27 inch</a> by <a href="https://sketchfab.com/Annelida">Annelida</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></span>
 </footer>
 
 <script>
