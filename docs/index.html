@@ -51,8 +51,6 @@ a { color: inherit; text-decoration: none; }
 .btn.ink { background: var(--ink); color: var(--on-ink); box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .5); }
 .btn.ink:hover { opacity: .88; }
 .btn.small { height: 40px; padding: 0 18px; font-size: 14px; }
-.btn.soft { background: var(--card); color: var(--fg); }
-.btn.soft:hover { background: var(--line); }
 
 /* Hero: a rounded sky panel with the demo rising out of it */
 .hero { position: relative; margin: 12px; border-radius: 32px; padding: 150px 24px 0; text-align: center; color: #fff; background: linear-gradient(180deg, var(--sky-1) 0, var(--sky-2) 560px, var(--sky-3) 1060px); isolation: isolate; }
@@ -65,8 +63,8 @@ a { color: inherit; text-decoration: none; }
 .cmd { display: flex; align-items: center; gap: 6px; max-width: 520px; margin: 22px auto 0; height: 44px; padding: 0 6px 0 18px; border-radius: 999px; background: var(--card); color: var(--fg); }
 .cmd code { flex: 1; min-width: 0; text-align: left; font: 12.5px var(--mono); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .cmd code::-webkit-scrollbar { display: none; }
-.copy { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 999px; background: var(--line); color: var(--fg); cursor: pointer; transition: background .2s, transform .2s var(--ease); }
-.copy:hover { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.copy { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 999px; background: var(--ink); color: var(--on-ink); cursor: pointer; transition: opacity .2s, transform .2s var(--ease); }
+.copy:hover { opacity: .88; }
 .copy:active { transform: scale(.92); }
 .copy svg { width: 15px; height: 15px; }
 .copy .done { display: none; }
@@ -180,9 +178,8 @@ details pre { font: 12.5px var(--mono); color: var(--fg); background: var(--rais
 /* Closing panel */
 .end { margin: 120px 12px 12px; border-radius: 32px; padding: 110px 24px; text-align: center; color: #fff; background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 100%); }
 .end h2 { font-size: clamp(36px, 5.4vw, 64px); line-height: 1.02; letter-spacing: -.045em; font-weight: 600; margin: 0 auto 32px; max-width: 16ch; text-wrap: balance; text-shadow: 0 2px 30px rgba(30, 50, 90, .15); }
-.btn.glass { background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .35); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.btn.glass { background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .35); color: var(--fg); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .btn.glass:hover { background: rgba(255, 255, 255, .3); }
-.hero .btn.glass { color: var(--fg); }
 
 footer { padding: 28px 24px 36px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 24px; }
 footer a:hover { color: var(--fg); }
