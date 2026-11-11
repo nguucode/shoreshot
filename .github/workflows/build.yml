@@ -17,6 +17,91 @@ permissions:
   contents: write
 
 jobs:
+  # The Tauri app in app-tauri/. Files keep the Electron release names (ShoreShot-<v>-mac-<arch>.dmg/.zip,
+  # ShoreShot-Setup-<v>.exe): install.sh/.ps1, the website and older apps' update check look for them.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app-tauri/src-tauri -> ../../target
+          key: ${{ matrix.target }}
+      - run: npm ci --no-audit --no-fund
+        working-directory: app-tauri
+      # Sign with the fixed self-signed certificate so macOS keeps permissions across updates
+      # (app-tauri/bundle-mac.sh). Secrets: MAC_CERT_P12 (base64 .p12), MAC_CERT_PASSWORD.
+      # Without them the build is signed ad-hoc and still works, but permissions reset on update.
+      - if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ]; then echo "::warning::MAC_CERT_P12 not set, signing ad-hoc"; exit 0; fi
+          KC="$RUNNER_TEMP/build.keychain-db"
+          KC_PW="$(uuidgen)"
+          echo "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KC" > /dev/null
+          # codesign only finds an untrusted (self-signed) identity in keychains on the search list.
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          ID="$(security find-identity -p codesigning "$KC" | awk '/ShoreShot/{print $2; exit}')"
+          [ -n "$ID" ] || { echo "::error::no ShoreShot identity in the certificate"; exit 1; }
+          echo "MAC_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
+          rm "$RUNNER_TEMP/cert.p12"
+      - if: runner.os == 'macOS'
+        working-directory: app-tauri
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sh bundle-mac.sh
+          mkdir -p ../release
+          cp "$CARGO_TARGET_DIR/$TARGET"/release/bundle/ShoreShot-*-mac-*.{dmg,zip} ../release/
+          # Same designated requirement as 1.x, or users lose Screen Recording / Accessibility on update.
+          codesign -d -r- "$CARGO_TARGET_DIR/$TARGET/release/bundle/macos/ShoreShot.app" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: runner.os == 'Windows'
+        working-directory: app-tauri
+        shell: bash
+        run: |
+          npm run web
+          npx tauri build --bundles nsis --target ${{ matrix.target }}
+          mkdir -p ../release
+          cp ../target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe \
+            "../release/ShoreShot-Setup-$(node -p "require('../package.json').version").exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shoreshot-${{ matrix.target }}
+          if-no-files-found: error
+          path: release/*
+
+  release:
+        description: 'Create a GitHub Release (tag v<version in package.json>)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
   build:
     strategy:
       fail-fast: false
@@ -114,4 +199,4 @@ jobs:
             - Mac Intel: `ShoreShot-*-mac-x64.dmg`
             - Windows: `ShoreShot-Setup-*.exe`
 
-            The app is not code-signed. If macOS says it is "damaged" or can't be opened, run: `xattr -cr /Applications/ShoreShot.app`. Windows SmartScreen: More info > Run anyway.
+            The app is not notarized by Apple. If macOS says it is "damaged" or can't be opened, run: `xattr -cr /Applications/ShoreShot.app`. Windows SmartScreen: More info > Run anyway.
