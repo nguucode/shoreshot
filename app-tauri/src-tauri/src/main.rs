@@ -338,8 +338,9 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         let key = if act[m] { format!("    {}", pretty_hotkey(&c.hotkeys[m])) } else { String::new() };
         menu.append(&MenuItem::with_id(app, MODES[m], format!("{}{key}", MODE_LABEL[m]), true, None::<&str>)?)?;
     }
-    menu.append(&MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?)?;
+    // The first section is only what starts a capture; Settings opens the second one.
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?)?;
     if let Some((version, _)) = st(app).update.lock().unwrap().clone() {
         menu.append(&MenuItem::with_id(app, "update", format!("Update to {version}…"), true, None::<&str>)?)?;
     }
