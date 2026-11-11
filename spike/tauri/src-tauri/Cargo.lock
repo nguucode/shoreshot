@@ -3608,6 +3608,8 @@ dependencies = [
  "tauri-build",
  "tauri-nspanel",
  "tauri-plugin-global-shortcut",
+ "webview2-com",
+ "windows-core",
  "windows-sys 0.59.0",
  "xcap",
 ]

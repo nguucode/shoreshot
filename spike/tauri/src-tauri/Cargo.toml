@@ -21,6 +21,8 @@ objc2-foundation = "0.3"
 [target.'cfg(windows)'.dependencies]
 arboard = "3"
 image = { version = "0.25", default-features = false, features = ["png"] }
+webview2-com = "0.39"
+windows-core = "0.62"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]

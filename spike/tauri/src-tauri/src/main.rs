@@ -5,6 +5,8 @@
 //! Env: SPIKE_BENCH=1 one capture, then web/api.js scripts a selection + 2 s pen stroke + Enter (copy).
 //!      SPIKE_AUTO=n triggers n captures 3 s apart without the hotkey (each auto-closes after 1 s).
 //!      SPIKE_MODAL_TEST=1 opens the modal dialog 2 s after start, then fires a capture 1 s later.
+//!      SPIKE_XFER=1 moves a synthetic 4K frame (33 MB) to the page 5x per transport and logs the time.
+//!      SPIKE_IPC=1 (Windows) sends the capture over IPC instead of a WebView2 shared buffer.
 //!      SPIKE_NO_WORKS_WHEN_MODAL=1 (macOS) turns off the panel's worksWhenModal (the v1.0.0 setup).
 use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
@@ -80,23 +82,34 @@ fn capture(app: &AppHandle) {
     };
     let (px_w, px_h) = img.dimensions();
     mark(&s, &format!("captured {px_w}x{px_h} @{k}"));
-    *s.bitmap.lock().unwrap() = img.into_raw();
     *s.frame.lock().unwrap() = (x, y, w, h);
 
     s.open.store(true, SeqCst);
     s.visible.store(false, SeqCst);
     plat::show_hidden(app, (x, y, w, h));
-    let _ = app.emit_to(
-        "overlay",
-        "capture:show",
-        serde_json::json!({
-            "mode": "area", "cursor": { "x": (cx - x as f64) / k, "y": (cy - y as f64) / k },
-            "pxW": px_w, "pxH": px_h, "width": (w as f64 / k).round(), "height": (h as f64 / k).round(),
-            "retina1x": false, "bench": std::env::var("SPIKE_BENCH").is_ok()
-        }),
-    );
-    mark(&s, "sent");
+    let meta = serde_json::json!({
+        "mode": "area", "cursor": { "x": (cx - x as f64) / k, "y": (cy - y as f64) / k },
+        "pxW": px_w, "pxH": px_h, "width": (w as f64 / k).round(), "height": (h as f64 / k).round(),
+        "retina1x": false, "bench": std::env::var("SPIKE_BENCH").is_ok()
+    });
+    #[cfg(windows)]
+    if std::env::var("SPIKE_IPC").is_err() {
+        win::post_frame(app, img.into_raw(), meta); // shared memory, no IPC copy
+        return watchdog(app);
+    }
+    send_ipc(app, img.into_raw(), &meta, "capture:show");
+    watchdog(app);
+}
 
+/// The page pulls the bitmap with `invoke('bitmap')`: raw bytes over IPC.
+fn send_ipc(app: &AppHandle, rgba: Vec<u8>, meta: &serde_json::Value, event: &str) {
+    let s = app.state::<S>();
+    *s.bitmap.lock().unwrap() = rgba;
+    let _ = app.emit_to("overlay", event, meta);
+    mark(&s, "sent");
+}
+
+fn watchdog(app: &AppHandle) {
     // Safety valve: if the renderer never reports ready, hide instead of revealing an unresponsive overlay.
     let app2 = app.clone();
     std::thread::spawn(move || {
@@ -118,6 +131,8 @@ fn hide(app: &AppHandle) {
         mark(&s, "hidden");
     }
     plat::hide(app);
+    #[cfg(windows)]
+    win::release_frame();
     s.bitmap.lock().unwrap().clear();
     let _ = app.emit_to("overlay", "capture:hidden", ());
     flush(&s);
@@ -176,6 +191,35 @@ fn close(app: AppHandle) {
     let _ = app.run_on_main_thread(move || hide(&a));
 }
 
+/// SPIKE_XFER: the page got a synthetic 4K frame (`kind` = ipc | shared). Time since it was sent.
+#[tauri::command]
+fn xfer_done(s: tauri::State<S>, kind: String, bytes: u64) {
+    let ms = s.t0.lock().unwrap().map_or(0, |t| t.elapsed().as_millis());
+    log_line(&format!("xfer {kind} {} MB {ms} ms", bytes >> 20));
+}
+
+/// 3840x2160 RGBA (33 MB) to the page, 5 times over IPC, then (Windows) 5 times by shared buffer.
+fn xfer_bench(app: AppHandle) {
+    const N: usize = 3840 * 2160 * 4;
+    let kinds: &[&str] = if cfg!(windows) { &["ipc", "shared"] } else { &["ipc"] };
+    for kind in kinds {
+        for _ in 0..5 {
+            std::thread::sleep(Duration::from_millis(1500));
+            let a = app.clone();
+            let kind = kind.to_string();
+            let _ = app.run_on_main_thread(move || {
+                *a.state::<S>().t0.lock().unwrap() = Some(Instant::now());
+                let meta = serde_json::json!({ "xfer": kind });
+                match kind.as_str() {
+                    #[cfg(windows)]
+                    "shared" => win::post_frame(&a, vec![7u8; N], meta),
+                    _ => send_ipc(&a, vec![7u8; N], &meta, "xfer:ipc"),
+                }
+            });
+        }
+    }
+}
+
 #[tauri::command]
 fn log(line: String) {
     log_line(&line);
@@ -211,7 +255,7 @@ fn main() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![bitmap, ready, copy, close, log])
+        .invoke_handler(tauri::generate_handler![bitmap, ready, copy, close, log, xfer_done])
         .setup(|app| {
             plat::setup(app)?;
             let handle = app.handle().clone();
@@ -223,6 +267,11 @@ fn main() {
                         let h = handle.clone();
                         let _ = handle.run_on_main_thread(move || capture(&h));
                     }
+                });
+            } else if std::env::var("SPIKE_XFER").is_ok() {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(5)); // WebView2 + page load
+                    xfer_bench(handle);
                 });
             } else if std::env::var("SPIKE_MODAL_TEST").is_ok() {
                 std::thread::spawn(move || {
@@ -358,6 +407,11 @@ mod mac {
 #[cfg(windows)]
 mod win {
     use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl};
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment12, ICoreWebView2SharedBuffer, ICoreWebView2_17,
+        COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE,
+    };
+    use windows_core::Interface as _;
 
     pub fn log_dir() -> std::path::PathBuf {
         std::path::PathBuf::from(std::env::var("APPDATA").unwrap()).join("ShoreShot-spike")
@@ -406,6 +460,48 @@ mod win {
     pub fn hide(app: &AppHandle) {
         if let Some(win) = app.get_webview_window("overlay") {
             let _ = win.hide();
+        }
+    }
+
+    thread_local! {
+        /// The frame the page is showing. Main thread only (COM object); closed on the next frame or on hide.
+        static FRAME: std::cell::RefCell<Option<ICoreWebView2SharedBuffer>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Copy the frame into a WebView2 shared buffer and post it to the page with `meta` as additionalData.
+    /// The page maps the same memory, so 33 MB costs one memcpy here instead of an IPC copy.
+    pub fn post_frame(app: &AppHandle, rgba: Vec<u8>, meta: serde_json::Value) {
+        let win = app.get_webview_window("overlay").unwrap();
+        let a = app.clone();
+        let _ = win.with_webview(move |wv| {
+            let s = a.state::<crate::S>();
+            let r = (|| -> windows_core::Result<()> {
+                unsafe {
+                    let env: ICoreWebView2Environment12 = wv.environment().cast()?;
+                    let core: ICoreWebView2_17 = wv.controller().CoreWebView2()?.cast()?;
+                    let buf = env.CreateSharedBuffer(rgba.len() as u64)?;
+                    let mut ptr = std::ptr::null_mut();
+                    buf.Buffer(&mut ptr)?;
+                    std::ptr::copy_nonoverlapping(rgba.as_ptr(), ptr, rgba.len());
+                    crate::mark(&s, "copied to shared buffer");
+                    let json = windows_core::HSTRING::from(meta.to_string());
+                    core.PostSharedBufferToScript(&buf, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, &json)?;
+                    if let Some(old) = FRAME.with(|f| f.replace(Some(buf))) {
+                        let _ = old.Close();
+                    }
+                }
+                Ok(())
+            })();
+            match r {
+                Ok(()) => crate::mark(&s, "posted"),
+                Err(e) => crate::log_line(&format!("shared buffer: {e}")),
+            }
+        });
+    }
+
+    pub fn release_frame() {
+        if let Some(buf) = FRAME.with(|f| f.take()) {
+            let _ = unsafe { buf.Close() };
         }
     }
 

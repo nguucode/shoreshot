@@ -1,5 +1,5 @@
 // Stub of the Electron preload bridge (src/preload.ts) on top of Tauri's IPC.
-// The 5K bitmap (~59 MB) travels as raw bytes (ipc::Response), not JSON.
+// The bitmap travels as raw bytes (ipc::Response) or, on Windows, a WebView2 shared buffer. Never JSON.
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
@@ -15,15 +15,39 @@
     });
   };
 
+  // The bitmap arrives one of two ways: pulled over IPC after 'capture:show', or (Windows) as a WebView2
+  // shared buffer whose memory the page maps directly ('sharedbufferreceived', meta in additionalData).
+  let onFrame = () => undefined;
+  const show = (meta, bitmap) => {
+    onFrame({ ...meta, bitmap, bgra: false });
+    if (meta.bench) setTimeout(bench, 500);
+  };
+  listen('capture:show', async ({ payload: meta }) => {
+    const t = performance.now();
+    const buf = await invoke('bitmap');
+    transferMs = Math.round(performance.now() - t);
+    show(meta, new Uint8Array(buf));
+  });
+  // SPIKE_XFER: synthetic 4K frames, only timed (touch the last byte so the data is really there).
+  listen('xfer:ipc', async () => {
+    const buf = new Uint8Array(await invoke('bitmap'));
+    invoke('xfer_done', { kind: 'ipc', bytes: buf[buf.length - 1] ? buf.length : 0 });
+  });
+  window.chrome?.webview?.addEventListener('sharedbufferreceived', (e) => {
+    const buf = e.getBuffer();
+    const meta = e.additionalData;
+    if (meta.xfer) {
+      const u8 = new Uint8Array(buf);
+      invoke('xfer_done', { kind: 'shared', bytes: u8[u8.length - 1] ? u8.length : 0 });
+    } else {
+      transferMs = 0;
+      show(meta, new Uint8Array(buf)); // paints synchronously (putImageData), so the buffer can go after
+    }
+    window.chrome.webview.releaseBuffer(buf);
+  });
+
   window.api = {
-    onCapture: (cb) =>
-      listen('capture:show', async ({ payload: meta }) => {
-        const t = performance.now();
-        const buf = await invoke('bitmap');
-        transferMs = Math.round(performance.now() - t);
-        cb({ ...meta, bitmap: new Uint8Array(buf), bgra: false });
-        if (meta.bench) setTimeout(bench, 500);
-      }),
+    onCapture: (cb) => (onFrame = cb),
     onHidden: (cb) => listen('capture:hidden', () => cb()),
     onWindows: () => undefined, // window mode not ported
     ready: () => invoke('ready', { transferMs }),
