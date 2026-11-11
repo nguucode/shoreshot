@@ -51,7 +51,8 @@ function ocrLines(fragments: OcrFragment[]): OcrLine[] {
         while (ocrIcon(words[0] ?? '')) words.shift();
       }
       while (ocrIcon(words[words.length - 1] ?? '')) words.pop(); // an emoji at the end of a line
-      if (words.length) lines.push({ text: words.join(' '), bulletX, x: startX, right: end, cy: row.cy, h: row.h });
+      // " ,": the OCR puts a space after an inline chip or code span; no language writes a comma that way.
+      if (words.length) lines.push({ text: words.join(' ').replace(/ ,/g, ','), bulletX, x: startX, right: end, cy: row.cy, h: row.h });
       first = false;
       words = [];
     };
@@ -107,7 +108,9 @@ function layoutText(fragments: OcrFragment[]): string {
           prev && l.bulletX === null && l.cy - prev.cy > prev.h / 2 &&
           prev.right - prev.x > OCR_LONG_LINE * prev.h && prev.right - left > 0.85 * width &&
           !/[.!?:;…]$/.test(prev.text);
-        out += (i ? (wrapped ? ' ' : '\n') : '') + l.text;
+        // A line broken at a hyphen ("translate-" / "scanned-text") continues without a space.
+        const glue = wrapped ? (/[\p{L}\p{N}]-$/u.test(prev.text) ? '' : ' ') : '\n';
+        out += (i ? glue : '') + l.text;
       });
       return out;
     })

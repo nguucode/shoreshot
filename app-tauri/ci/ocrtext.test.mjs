@@ -36,7 +36,7 @@ const words = [
   f('Overview', 128, 108, 76, 14), f('Specs', 230, 108, 44, 14),
   f('with', 383, 168, 30, 14), f('href', 424, 168, 34, 14), f(',', 464, 168, 4, 14), f('navigates.', 472, 168, 60, 14),
 ];
-assert.equal(layoutText(words), 'Overview\nSpecs\nwith href , navigates.');
+assert.equal(layoutText(words), 'Overview\nSpecs\nwith href, navigates.');
 
 // Bullets: normalised to "- ", nested by x; numbers kept; a missed bullet is just a line.
 const list = [
@@ -84,6 +84,14 @@ Overview
 Guidelines
 - First item that is long enough to reach the right edge of the block and wrap onto a second line
 - Second`,
+);
+// A line broken at a hyphen continues without a space; a comma after a code chip loses the stray space.
+assert.equal(
+  layoutText([
+    f('The fix is in commit 9b48219 on the branch that is called claude/translate-', 20, 10, 600, 14),
+    f('scanned-text , not pushed.', 20, 30, 200, 14),
+  ]),
+  'The fix is in commit 9b48219 on the branch that is called claude/translate-scanned-text, not pushed.',
 );
 
 // Translate direction: Vietnamese goes to English, everything else to Vietnamese (French accents are not Vietnamese).
