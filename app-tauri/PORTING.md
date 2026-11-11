@@ -96,20 +96,23 @@ way on the same machine as the baseline. The runner is 1024×768 at 100 %, no GP
 | Dialog guard / the v1.0.0 freeze | Done | Windows has no app-modal input block, so the freeze can't happen the same way. Tested: with a MessageBox open on the app's main thread (`SHORESHOT_TEST_MODAL=1`), the hotkey still opens the overlay over it, Esc closes the overlay, and the dialog is intact afterwards. The `dialogs` guard still applies to ShoreShot's own dialogs. |
 | Update notification | Not done | Same as macOS: tray item + Settings link only. |
 
-### Windows measurements (run 42986796697, same runner for both apps)
+### Windows measurements (runs 42986796697 and 42988224877, same runner for both apps)
 
 | | Electron (from source) | Tauri |
 |---|---|---|
-| Hotkey → overlay visible | 57–105 ms (median 77, n=8) | **53–74 ms (median 60, n=8)** |
-| Idle RAM, private bytes, process tree | 131 MB (4 processes) | **102 MB** (7) |
-| After the suite, private | 180 MB | **113 MB** |
+| Hotkey → overlay visible, run 1 | 57–105 ms (median 77, n=8) | 53–74 ms (median 60, n=8) |
+| Hotkey → overlay visible, run 2 | 45–72 ms (median 58, n=8) | 43–76 ms (median 65, n=8) |
+| Idle RAM, private bytes, process tree | 131–132 MB (4 processes) | **100–102 MB** (7) |
+| After the suite, private | 180–181 MB | **112–113 MB** |
 | Installer | 78–100 MB | **1.2 MB** |
 | Clipboard formats after copy | Bitmap, DeviceIndependentBitmap, Format17, PNG, System.Drawing.Bitmap | same |
 | Hotkey ×6 → overlay, Esc ×6 closes | pass | pass |
 | Select 500×350, draw a rectangle, Enter | pass (500×350 on the clipboard) | pass (500×350) |
 | Window mode: click a 600×400 Notepad, Enter | 584×341 (not investigated) | pass (586×393, the DWM frame) |
+| MessageBox open on the main thread: hotkey, Esc | (not run) | pass: overlay over the dialog, Esc closed it, dialog intact |
 
-In a Tauri capture.log line, `captured` (xcap) takes 21–39 ms and `posted` (copy into the shared buffer) 20–25 ms
+Latency is on par with Electron, not clearly better: each app won one run on the median, and the ranges
+overlap. Capture (xcap vs node-screenshots) dominates both. In a Tauri capture.log line, `captured` (xcap) takes 21–39 ms and `posted` (copy into the shared buffer) 20–25 ms
 after it. A 64 KB PNG copy takes 14 ms.
 
 ### Not verified on Windows
