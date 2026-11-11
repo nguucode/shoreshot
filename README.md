@@ -1,6 +1,6 @@
 # ShoreShot
 
-Screenshot + annotation app for **macOS and Windows** (Electron + TypeScript). Runs in the background from the menu bar (macOS) / system tray (Windows).
+Screenshot + annotation app for **macOS and Windows** (Tauri 2 + Rust + TypeScript, about 3.5 MB). Runs in the background from the menu bar (macOS) / system tray (Windows).
 
 Website: https://shoreshot.ontheshore.biz
 
@@ -69,15 +69,17 @@ The app is not code-signed:
 
 ## Development
 
-Requires Node.js 18+.
+Requires Node.js 18+ and Rust (rustup). The app lives in `app-tauri/` and reuses the renderer in `src/renderer/` + `static/`.
 
 ```bash
-git clone https://github.com/nguucode/shoreshot.git && cd shoreshot
+git clone https://github.com/nguucode/shoreshot.git && cd shoreshot/app-tauri
 npm install
-npm start          # run in dev (macOS: allow Screen Recording for the "Electron" app)
-npm run dist:mac   # build .dmg + .zip on a Mac
-npm run dist:win   # build .exe on Windows
+npm run dev                                   # run in dev
+sh bundle-mac.sh                              # signed .app, .dmg + .zip (Intel: TARGET=x86_64-apple-darwin)
+npx tauri build --bundles nsis                # Windows installer (after npm run web)
 ```
+
+Details per platform, parity with the old Electron app and measurements: [`app-tauri/PORTING.md`](app-tauri/PORTING.md).
 
 Each capture writes one line of step timings (ms since the hotkey) to `~/Library/Logs/ShoreShot/capture.log` (Windows: `%APPDATA%\ShoreShot\logs\capture.log`):
 
@@ -85,9 +87,7 @@ Each capture writes one line of step timings (ms since the hotkey) to `~/Library
 tail -f ~/Library/Logs/ShoreShot/capture.log
 ```
 
-### Tauri port (in progress, not shipped)
-
-`app-tauri/` is the start of a port from Electron to Tauri 2 (macOS first) for a much smaller app (issue #41). It reuses `src/renderer/` and `static/` unchanged; the Electron app stays the shipped app until the port reaches parity. Status per feature, how to build and run it, and measurements: [`app-tauri/PORTING.md`](app-tauri/PORTING.md).
+Up to 1.1.0 ShoreShot was an Electron app (78–100 MB installers). 2.0.0 ships the Tauri port. The Electron main process (`src/main.ts`, `src/preload.ts`) is still in the repo but no longer built for releases.
 
 ### Releasing a new version
 
@@ -101,7 +101,7 @@ The website's [release page](https://shoreshot.ontheshore.biz/release/) reads th
 
 #### macOS signing certificate
 
-macOS ties Screen Recording / Accessibility permissions to the app's signature, so every release must be signed with the same certificate (`scripts/after-pack.js`). The build reads it from two repository secrets: `MAC_CERT_P12` (base64 of a `.p12` holding a self-signed code-signing certificate whose name contains "ShoreShot") and `MAC_CERT_PASSWORD`. Without them the build falls back to ad-hoc signing, and users get asked for permissions again after every update. Keep the `.p12` safe: a new certificate also resets everyone's permissions once.
+macOS ties Screen Recording / Accessibility permissions to the app's signature, so every release must be signed with the same certificate (`app-tauri/bundle-mac.sh`). The build reads it from two repository secrets: `MAC_CERT_P12` (base64 of a `.p12` holding a self-signed code-signing certificate whose name contains "ShoreShot") and `MAC_CERT_PASSWORD`. Without them the build falls back to ad-hoc signing, and users get asked for permissions again after every update. Keep the `.p12` safe: a new certificate also resets everyone's permissions once.
 
 ## Changing the hotkeys
 
@@ -120,14 +120,14 @@ Windows 11 note: `PrintScreen` is usually assigned to Snipping Tool. To use it, 
 ## Layout
 
 ```
-src/main.ts              main process: tray, hotkey + config, capture, clipboard, auto-paste, save
-src/preload.ts           safe IPC bridge (contextIsolation + sandbox)
+app-tauri/src-tauri/     the app: tray, hotkeys + config, capture, clipboard, auto-paste, save (Rust, macOS + Windows)
+app-tauri/web/api.js     window.api bridge for the renderer (Tauri IPC)
 src/renderer/editor.ts   overlay for selecting an area + drawing annotations (canvas)
 src/renderer/settings.ts Settings window: hotkey recording, options
 static/                  HTML/CSS for the overlay and Settings
 scripts/install.sh|.ps1  terminal install/uninstall (macOS/Windows)
 assets/                  tray icons
-build/icon.png           app icon (electron-builder converts it to .icns/.ico)
+build/icon.png           app icon (`tauri icon` converts it to .icns/.ico)
 docs/                    website (GitHub Pages, shoreshot.ontheshore.biz); docs/shot-*.jpg are renders of the real editor overlay (the hero animation)
 ```
 

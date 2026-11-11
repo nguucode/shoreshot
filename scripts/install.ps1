@@ -18,7 +18,8 @@ $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is much faster wit
 
 $Repo = 'nguucode/shoreshot'
 $AppName = 'ShoreShot'
-$InstallDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"
+$InstallDir = Join-Path $env:LOCALAPPDATA $AppName                 # 2.x (Tauri, per-user NSIS)
+$OldInstallDir = Join-Path $env:LOCALAPPDATA "Programs\$AppName"   # 1.x (Electron)
 $StartMenuLnk = Join-Path ([Environment]::GetFolderPath('Programs')) "$AppName.lnk"
 $DesktopLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) "$AppName.lnk"
 
@@ -38,20 +39,24 @@ function Find-Uninstaller {
     'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
   )
   Get-ItemProperty $keys -ErrorAction SilentlyContinue |
-    Where-Object { $_.DisplayName -like "$AppName*" -and $_.UninstallString } |
-    Select-Object -First 1
+    Where-Object { $_.DisplayName -like "$AppName*" -and $_.UninstallString }
+}
+
+# Runs every ShoreShot uninstaller found. 1.x (Electron) and 2.x (Tauri) register different uninstall
+# keys and folders, so installing 2.x over 1.x would otherwise leave two copies. Settings are kept.
+function Remove-Installed {
+  foreach ($u in @(Find-Uninstaller)) {
+    $exe = ($u.UninstallString -replace '^"([^"]+)".*$', '$1')
+    if (Test-Path $exe) { Start-Process -FilePath $exe -ArgumentList '/S' -Wait }
+  }
 }
 
 if ($Uninstall) {
   Say "Removing $AppName..."
   Stop-App
-  $u = Find-Uninstaller
-  if ($u) {
-    $exe = ($u.UninstallString -replace '^"([^"]+)".*$', '$1')
-    Start-Process -FilePath $exe -ArgumentList '/S' -Wait
-    Ok 'Ran the uninstaller.'
-  }
-  foreach ($p in @($InstallDir, $StartMenuLnk, $DesktopLnk, (Join-Path $env:APPDATA $AppName))) {
+  Remove-Installed
+  foreach ($p in @($InstallDir, $OldInstallDir, $StartMenuLnk, $DesktopLnk, (Join-Path $env:APPDATA $AppName),
+                   (Join-Path $env:APPDATA 'biz.ontheshore.shoreshot'), (Join-Path $env:LOCALAPPDATA 'biz.ontheshore.shoreshot'))) {
     if (Test-Path $p) { Remove-Item $p -Recurse -Force; Ok "Removed $p" }
   }
   Ok 'Uninstalled.'
@@ -137,6 +142,7 @@ function Install-FromRelease {
          "Run this command again in a few minutes, or download it manually: https://github.com/$Repo/releases/latest")
   }
   Stop-App
+  Remove-Installed
   Say 'Installing (silent)...'
   # /S: silent install, /currentuser: no Admin rights needed.
   Start-Process -FilePath $setup -ArgumentList '/S', '/currentuser' -Wait
@@ -148,7 +154,7 @@ try {
 
   $exe = Join-Path $InstallDir "$AppName.exe"
   if (-not (Test-Path $exe)) {
-    $u = Find-Uninstaller
+    $u = Find-Uninstaller | Select-Object -First 1
     if ($u -and $u.InstallLocation) { $exe = Join-Path $u.InstallLocation "$AppName.exe" }
   }
 
