@@ -41,6 +41,8 @@ interface ShoreShotApi {
   ocr(png: Uint8Array): Promise<OcrFragment[]>;
   /** paste: also hide the overlay and paste into the app used before the capture. */
   copyText(text: string, paste: boolean): Promise<void>;
+  /** Sends the text to Google Translate; rejects when offline or refused. */
+  translate(text: string, to: 'vi' | 'en'): Promise<string>;
   settings: {
     get(): Promise<ShoreShotSettings>;
     setHotkey(mode: ShoreShotMode, accel: string): Promise<ShoreShotSetHotkeyResult>;

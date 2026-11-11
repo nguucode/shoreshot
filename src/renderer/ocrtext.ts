@@ -76,3 +76,6 @@ function layoutText(fragments: OcrFragment[]): string {
     })
     .join('\n');
 }
+
+/** Translate into: English if the text has letters only Vietnamese uses (ă đ ơ ư and the tone-marked vowels), else Vietnamese. */
+const translateTarget = (text: string): 'vi' | 'en' => (/[ăđơư\u1EA0-\u1EF9]/i.test(text) ? 'en' : 'vi');

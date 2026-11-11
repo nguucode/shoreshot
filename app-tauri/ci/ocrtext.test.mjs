@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../dist/ocrtext.js', import.meta.url), 'utf8');
-const layoutText = new Function(`${src}; return layoutText;`)();
+const { layoutText, translateTarget } = new Function(`${src}; return { layoutText, translateTarget };`)();
 const f = (t, x, y, w, h) => ({ t, x, y, w, h });
 
 // What macOS Vision returns for the Button docs screenshot (617×429): one fragment per line, icons misread.
@@ -58,4 +58,10 @@ assert.equal(layoutText([f('Big', 20, 10, 80, 40), f('x', 120, 12, 10, 12), f('s
 
 assert.equal(layoutText([]), '');
 assert.equal(layoutText([f('•', 10, 10, 8, 14)]), ''); // a lone icon is not text
+
+// Translate direction: Vietnamese goes to English, everything else to Vietnamese (French accents are not Vietnamese).
+assert.equal(translateTarget('Sao chép văn bản'), 'en');
+assert.equal(translateTarget('ĐƯỜNG DẪN'), 'en');
+assert.equal(translateTarget('Copy text from area'), 'vi');
+assert.equal(translateTarget('Crème brûlée à la carte'), 'vi');
 console.log('ocrtext ok');

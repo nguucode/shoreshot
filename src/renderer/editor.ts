@@ -69,6 +69,7 @@ const draftCtx = draftCv.getContext('2d')!;
 const actionsEl = $<HTMLDivElement>('actions'); // tools bar + action bar, positioned together
 const toolbarEl = $<HTMLDivElement>('toolbar');
 const pasteHint = $<HTMLDivElement>('pasteHint');
+const translateHint = $<HTMLSpanElement>('translateHint');
 const sizeBadge = $<HTMLDivElement>('sizeBadge');
 const hud = $<HTMLDivElement>('hud');
 const hint = $<HTMLDivElement>('hint');
@@ -399,12 +400,12 @@ function syncToolbar(): void {
   document.body.style.cursor = baseCursor();
 }
 
-function showHud(msg: string, x: number, y: number): void {
+function showHud(msg: string, x: number, y: number, ms = 700): void {
   hud.textContent = msg;
   hud.classList.remove('hidden');
   hud.style.transform = `translate(${clamp(x + 18, 4, ed.viewW - 160)}px, ${clamp(y + 18, 4, ed.viewH - 40)}px)`;
   window.clearTimeout(ed.hudTimer);
-  ed.hudTimer = window.setTimeout(() => hud.classList.add('hidden'), 700);
+  ed.hudTimer = window.setTimeout(() => hud.classList.add('hidden'), ms);
 }
 
 function setTool(t: Tool): void {
@@ -589,7 +590,7 @@ function requestPaste(e?: KeyboardEvent): void {
   }
   paste();
 }
-const paste = () => void (ed.phase === 'text' ? copyScanned(true) : act(window.api.copyPaste));
+const paste = () => void (ed.phase === 'text' ? copyScanned('paste') : act(window.api.copyPaste));
 
 /** Window capture: the frontmost window under p. */
 const windowAt = (p: Pt) => ed.windows.find((w) => inBox(p, w)) ?? null;
@@ -624,19 +625,32 @@ function scanText(s: Box): void {
     });
 }
 
-/** ⌘C / Enter / ⌘V in copy-text mode: copy the text that was read (waiting for it if needed), then close or paste. */
-async function copyScanned(paste: boolean): Promise<void> {
+/** ⌘C / Enter / ⌘V / ⌘T in copy-text mode: copy the text that was read (waiting for it if needed), or its translation, then close or paste. */
+async function copyScanned(action: 'copy' | 'paste' | 'translate'): Promise<void> {
   const s = ed.selection;
   if (ed.phase !== 'text' || !s || !ed.scan) return;
   ed.phase = 'exporting'; // block a second trigger
   layout();
   const text = await ed.scan.catch(() => '');
   if (!text || ed.selection !== s) return; // scanText reports an empty or failed scan
-  if (paste) return void window.api.copyText(text, true); // main hides the overlay and pastes
-  await window.api.copyText(text, false);
+  if (action === 'paste') return void window.api.copyText(text, true); // main hides the overlay and pastes
+  let out = text;
+  if (action === 'translate') {
+    showHud('Translating…', ed.mouse.x, ed.mouse.y, 15000); // until the answer; main gives up after 10 s
+    const translated = await window.api.translate(text, translateTarget(text)).catch(() => '');
+    if (ed.selection !== s) return;
+    if (!translated) {
+      // Offline or refused: the text is still there to copy.
+      showHud('Could not translate', ed.mouse.x, ed.mouse.y);
+      ed.phase = 'text';
+      return layout();
+    }
+    out = translated;
+  }
+  await window.api.copyText(out, false);
   if (ed.selection !== s) return;
-  const n = text.split('\n').length;
-  showHud(`Copied ${n} line${n === 1 ? '' : 's'}`, ed.mouse.x, ed.mouse.y);
+  const n = out.split('\n').length;
+  showHud(`${action === 'translate' ? 'Translated' : 'Copied'} ${n} line${n === 1 ? '' : 's'}`, ed.mouse.x, ed.mouse.y);
   setTimeout(() => {
     if (ed.selection === s) window.api.close();
   }, 700);
@@ -906,7 +920,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') return window.api.close();
   if (ed.phase === 'text') {
     if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
-    if ((mod && k === 'c') || e.key === 'Enter') { e.preventDefault(); void copyScanned(false); }
+    if ((mod && k === 'c') || e.key === 'Enter') { e.preventDefault(); void copyScanned('copy'); }
+    if (mod && k === 't') { e.preventDefault(); void copyScanned('translate'); }
     return;
   }
   if (ed.phase !== 'editing') return;
@@ -987,6 +1002,8 @@ window.api.onCapture((cap) => {
   ed.mouse = cap.cursor;
   ed.phase = 'selecting';
   ed.mode = cap.mode;
+  translateHint.classList.toggle('hidden', cap.mode !== 'text');
+  ed.hintSize = null; // the hint is wider with the translate shortcut
   if (cap.mode === 'full') {
     enterEditing({ x: 0, y: 0, w: cap.width, h: cap.height });
   } else {
