@@ -1,6 +1,10 @@
 # Tauri spike: findings
 
-**Recommendation: go**, for a staged port on macOS first. On every measure the capture path is as fast or
+**Update after the Windows run (below): go on macOS, not yet on Windows.** On Windows the WebView2 IPC
+makes Tauri slower than Electron. The bitmap transport has to be replaced, then measured on a real 4K
+display, before the port is committed. Original macOS verdict follows.
+
+**Recommendation (macOS): go**, for a staged port on macOS first. On every measure the capture path is as fast or
 faster than Electron, the installer is ~50× smaller and idle RAM ~7× lower. The renderer moved over
 unchanged. The work is the ~760-line `main.ts` rewrite and redoing the Windows side, not the editor.
 Gate the port on the open items at the bottom, mainly Windows (WebView2) and keeping the signing identity.
@@ -75,3 +79,50 @@ matter. Capture time dominates latency on both; the rest of the Tauri path is ~3
 4. Clipboard: the spike writes PNG only. Electron writes several types; check pasting into older apps
    that want TIFF.
 5. Multi-display with different scale factors (only one 5K display tested).
+
+## Windows (GitHub Actions `windows-latest`, run 42973589821)
+
+Same spike, `cfg`-split in `main.rs`: a plain always-on-top WebView2 window instead of NSPanel, physical-pixel
+coordinates (xcap and `cursor_position()` agree), `arboard` for the clipboard, an unowned `MessageBoxW` for
+the modal test. `.github/workflows/spike-windows.yml` + `ci/run-windows.ps1` press the real Ctrl+Shift+X with
+`keybd_event` and run the Electron app (from source) the same way on the same machine. The run's artifact
+has the logs and screenshots.
+
+Runner limits: 1024×768 at 100 %, no GPU (WebView2 renders in software), Windows Server 2025. Absolute numbers
+are not a desktop's; the Electron-vs-Tauri comparison on the same box is the point.
+
+| | Electron (same runner) | Tauri spike |
+|---|---|---|
+| Installer | 78–100 MB (release) | **1.2 MB** NSIS (exe 3.3 MB; WebView2 ships with Windows 10/11) |
+| Idle RAM, private bytes, process tree | 131 MB (4 processes) | 101 MB (8 processes) |
+| Idle RAM, working set | 277 MB | 311 MB (shared Edge runtime pages count here) |
+| After 6 captures, private | 156 MB | 113 MB |
+| Hotkey → overlay visible, 1024×768 | **56–97 ms** | **103–149 ms** |
+| of which: capture | 26–48 ms (node-screenshots) | 27–46 ms (xcap) |
+| of which: event to page | ~15 ms | 15–22 ms |
+| of which: 3 MB bitmap to the page | (in "sent") | **47–77 ms** |
+| Drawing bench (software rendering) | – | 64 fps steady (15.6 ms), handlers <1 ms |
+| Copy to clipboard | – | 46 KB PNG: 67 ms IPC + 35 ms decode/set |
+
+**Tauri is slower on Windows, and the reason is bandwidth.** WebView2 moves Tauri's raw IPC bytes at
+roughly 40–60 MB/s, through its custom-protocol / WebResourceRequested path. At 1024×768 that is 3 MB and
+~50 ms. A 4K screen is 33 MB and would cost ~0.5–0.8 s, which is unusable. (WKWebView on macOS moved 59 MB in
+20–40 ms.) The rest of the Windows path is on par with Electron.
+
+Fix to try before a Windows port: skip IPC for the bitmap. WebView2's `PostSharedBufferToScript` hands
+the page a shared-memory `ArrayBuffer` with no copy. Tauri doesn't expose it, but `WebviewWindow::with_webview`
+gives the raw `ICoreWebView2`, so it is ~50 lines with the `webview2-com` crate. Alternatives: encode to
+BMP/JPEG and load via a custom protocol (still a copy), or capture at reduced size for the first frame.
+
+Safety on Windows: **no lock.** With the MessageBox open, the hotkey still captured (MessageBox runs its own
+message pump), the overlay drew on top of the dialog, and Esc closed it (`hidden 1561`). The dialog was
+intact afterwards. Windows has no app-modal input block like macOS, so the v1.0.0 class does not apply
+there. Esc also closed every one of the 6 normal captures: focus works without extra tricks.
+
+Windows gotchas:
+- Release builds open a console window. A real port needs `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`.
+- The overlay is shown off-screen (−32000) until painted, then moved on. Layered/opacity windows don't
+  render WebView2, and a hidden WebView2 pauses `requestAnimationFrame`. Worked without a visible flash in
+  the screenshots.
+- `pwsh` 7 can't compile System.Drawing helpers without extra references; the harness runs in Windows PowerShell 5.1.
+- Not covered: mixed-DPI multi-monitor, 4K, the PowerShell auto-paste, SmartScreen with a 1.2 MB unsigned installer.
