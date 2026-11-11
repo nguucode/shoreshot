@@ -59,6 +59,9 @@
     return parts.join(isMac ? '' : '+');
   }
 
+  /** What the button next to a hotkey sets it to: area always has one (Default); the others can be turned off (Clear). */
+  const resetTo = (m: ShoreShotMode): string => (m === 'area' ? defaults[m] : '');
+
   function setMsg(text: string, kind: 'info' | 'error' | 'ok' = 'info'): void {
     msg.textContent = text;
     msg.dataset.kind = kind;
@@ -68,7 +71,7 @@
     for (const m of MODES) {
       fields[m].textContent = hotkeys[m].hotkey ? hotkeys[m].pretty : 'Not set';
       fields[m].classList.toggle('unset', !hotkeys[m].hotkey);
-      resets[m].disabled = hotkeys[m].hotkey === defaults[m];
+      resets[m].disabled = hotkeys[m].hotkey === resetTo(m);
     }
   }
 
@@ -107,7 +110,7 @@
   for (const m of MODES) {
     fields[m].addEventListener('click', () => (recording === m ? stopRecording() : startRecording(m)));
     fields[m].addEventListener('blur', stopRecording);
-    resets[m].addEventListener('click', () => void apply(m, defaults[m]));
+    resets[m].addEventListener('click', () => void apply(m, resetTo(m)));
   }
 
   window.addEventListener('keydown', (e) => {

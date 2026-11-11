@@ -87,7 +87,7 @@ xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 ok "Installed $APP_NAME to $DEST"
 echo
-echo "  • Default hotkey: ⌘⇧X (change it from the menu bar icon > Settings...)"
+echo "  • Default hotkeys: ⌘⇧X captures an area, ⌘⇧2 copies the text in an area (change them from the menu bar icon > Settings...)"
 echo "  • On the first capture, allow Screen Recording, then reopen the app."
 echo "  • For ⌘V to paste into other apps, also allow Accessibility."
 echo "  • Uninstall: curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | bash -s -- --uninstall"
