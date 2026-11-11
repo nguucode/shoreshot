@@ -85,6 +85,19 @@ $tauriAfter = Tree-Memory $p.Id
 Stop-Tree $p
 Take-Log $spikeLog tauri-capture.log
 
+# 1b. Same hotkey cycles with the bitmap over IPC instead of the shared buffer (the PR #44 path).
+$p = Start-App $Exe $null @{ SPIKE_IPC = '1' }
+Start-Sleep 10
+Cycle 6 'tauri-ipc'
+Stop-Tree $p
+Take-Log $spikeLog tauri-ipc-capture.log
+
+# 1c. Transport alone at 4K: a synthetic 3840x2160 frame (33 MB), 5x over IPC, 5x by shared buffer.
+$p = Start-App $Exe $null @{ SPIKE_XFER = '1' }
+Start-Sleep 25
+Stop-Tree $p
+Take-Log $spikeLog tauri-xfer.log
+
 # 2. Tauri drawing benchmark (scripted pen + rect strokes, then Enter = copy to clipboard).
 $p = Start-App $Exe $null @{ SPIKE_BENCH = '1' }
 Start-Sleep 18
@@ -124,9 +137,17 @@ $summary = @"
 | Idle RAM, working set | $($electronIdle.WorkingSetMB) MB | $($tauriIdle.WorkingSetMB) MB |
 | After 6 captures, private | $($electronAfter.PrivateMB) MB | $($tauriAfter.PrivateMB) MB |
 
-### Tauri capture.log
+### 4K transfer (33 MB synthetic frame)
+``````
+$(Get-Content "$Out/tauri-xfer.log" -Raw)
+``````
+### Tauri capture.log (shared buffer)
 ``````
 $(Get-Content "$Out/tauri-capture.log" -Raw)
+``````
+### Tauri capture.log (IPC)
+``````
+$(Get-Content "$Out/tauri-ipc-capture.log" -Raw)
 ``````
 ### Electron capture.log
 ``````

@@ -4,7 +4,7 @@ name: spike-windows
 # real hotkey and compares it with the Electron app on the same runner. Results: job summary + artifact.
 on:
   push:
-    branches: ['claude/tauri-windows-spike']
+    branches: ['claude/tauri-windows-spike', 'claude/tauri-win-sharedbuffer']
     paths: ['spike/tauri/**', '.github/workflows/spike-windows.yml']
   workflow_dispatch:
 
