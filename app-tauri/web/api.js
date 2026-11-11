@@ -50,7 +50,7 @@
     save: (png) => invoke('save', png),
     close: () => invoke('close'),
     ocr: (png) => invoke('ocr', png),
-    copyText: (text) => invoke('copy_text', { text }),
+    copyText: (text, paste) => invoke('copy_text', { text, paste }),
     settings: {
       get: () => invoke('settings_get'),
       setHotkey: (mode, accel) => invoke('settings_set_hotkey', { mode, accel }),

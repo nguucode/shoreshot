@@ -39,7 +39,8 @@ interface ShoreShotApi {
   close(): void;
   /** Text in a PNG, as fragments with their box in image pixels (see ocrtext.ts). */
   ocr(png: Uint8Array): Promise<OcrFragment[]>;
-  copyText(text: string): Promise<void>;
+  /** paste: also hide the overlay and paste into the app used before the capture. */
+  copyText(text: string, paste: boolean): Promise<void>;
   settings: {
     get(): Promise<ShoreShotSettings>;
     setHotkey(mode: ShoreShotMode, accel: string): Promise<ShoreShotSetHotkeyResult>;

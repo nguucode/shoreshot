@@ -790,33 +790,38 @@ fn copy_paste(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
     let _ = app.run_on_main_thread(move || {
         hide(&a);
         plat::clipboard_image(&png);
-        #[cfg(target_os = "macos")]
-        let _ = a.hide(); // give focus back to the previous app (Windows: hiding the overlay already does)
-        let b = a.clone();
-        std::thread::spawn(move || {
-            if !plat::accessibility(true) {
-                // accessibility(true) showed the macOS prompt
-                let choice = dialog(
-                    &b,
-                    "Image copied, but it could not be pasted automatically",
-                    "To auto-paste, allow ShoreShot in System Settings > Privacy & Security > Accessibility, then reopen the app. For now, press ⌘V to paste.\n\nShoreShot is already on but pasting still fails? Choose Reset permission and allow it again.",
-                    &["OK", "Reset permission"],
-                    0,
-                );
-                if choice == 1 {
-                    plat::reset_permission("Accessibility");
-                    plat::accessibility(true);
-                }
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(250));
-            if let Err(e) = plat::paste_keystroke() {
-                let key = if cfg!(windows) { "Ctrl+V" } else { "⌘V" };
-                error_box(&b, format!("Image copied, but auto-paste failed: {e}. Press {key} to paste."));
-            }
-        });
+        paste_into_previous_app(&a, "Image");
     });
     Ok(true)
+}
+
+/// Main thread, after hiding the overlay and filling the clipboard with `what` ("Image" / "Text").
+fn paste_into_previous_app(app: &AppHandle, what: &'static str) {
+    #[cfg(target_os = "macos")]
+    let _ = app.hide(); // give focus back to the previous app (Windows: hiding the overlay already does)
+    let b = app.clone();
+    std::thread::spawn(move || {
+        if !plat::accessibility(true) {
+            // accessibility(true) showed the macOS prompt
+            let choice = dialog(
+                &b,
+                &format!("{what} copied, but it could not be pasted automatically"),
+                "To auto-paste, allow ShoreShot in System Settings > Privacy & Security > Accessibility, then reopen the app. For now, press ⌘V to paste.\n\nShoreShot is already on but pasting still fails? Choose Reset permission and allow it again.",
+                &["OK", "Reset permission"],
+                0,
+            );
+            if choice == 1 {
+                plat::reset_permission("Accessibility");
+                plat::accessibility(true);
+            }
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+        if let Err(e) = plat::paste_keystroke() {
+            let key = if cfg!(windows) { "Ctrl+V" } else { "⌘V" };
+            error_box(&b, format!("{what} copied, but auto-paste failed: {e}. Press {key} to paste."));
+        }
+    });
 }
 
 #[tauri::command]
@@ -871,9 +876,19 @@ async fn ocr(request: Request<'_>) -> Result<Value, String> {
     Ok(rows.collect())
 }
 
+/// Copy-text mode: ⌘C copies (the page closes the overlay after its HUD), ⌘V also pastes like `copy_paste`.
 #[tauri::command]
-fn copy_text(app: AppHandle, text: String) {
-    let _ = app.run_on_main_thread(move || plat::clipboard_text(&text));
+fn copy_text(app: AppHandle, text: String, paste: bool) {
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if paste {
+            hide(&a);
+        }
+        plat::clipboard_text(&text);
+        if paste {
+            paste_into_previous_app(&a, "Text");
+        }
+    });
 }
 
 #[tauri::command]

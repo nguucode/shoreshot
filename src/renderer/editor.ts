@@ -26,8 +26,10 @@ const LINE_HEIGHT = 1.2;
 const TEXT_PAD = 8; // frame around the text being typed: drag it to move the text
 
 const ed = {
-  phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'exporting',
+  // text: copy-text mode with a selection, waiting for ⌘C / ⌘V
+  phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'text' | 'exporting',
   mode: 'area' as ShoreShotMode,
+  scan: null as Promise<string> | null, // copy-text mode: the text being read from the selection
   viewW: 0,
   viewH: 0,
   k: 1, // image pixels per CSS px
@@ -243,26 +245,28 @@ function layout(): void {
 }
 
 function positionToolbar(): void {
-  if (ed.phase !== 'editing' || !ed.selection) {
-    actionsEl.classList.add('hidden');
-    pasteHint.classList.add('hidden');
-    return;
-  }
-  actionsEl.classList.remove('hidden');
-  pasteHint.classList.remove('hidden');
-  ed.barSize ??= { w: actionsEl.offsetWidth, h: actionsEl.offsetHeight };
+  // Copy-text mode has no bars, only the copy/paste hint.
+  const bars = ed.phase === 'editing' && !!ed.selection;
+  const hinted = bars || (ed.phase === 'text' && !!ed.selection);
+  actionsEl.classList.toggle('hidden', !bars);
+  pasteHint.classList.toggle('hidden', !hinted);
+  if (!hinted) return;
   ed.hintSize ??= { w: pasteHint.offsetWidth, h: pasteHint.offsetHeight };
-  const { w: tw, h: th } = ed.barSize;
-  const s = norm(ed.selection);
+  const s = norm(ed.selection!);
   const gap = 8;
-  // Bars to the right of the selection; else to its left; else inside its right edge. Bottom-aligned with it.
-  let x = s.x + s.w + gap;
-  if (x + tw > ed.viewW - 4) x = s.x - tw - gap;
-  if (x < 4) x = s.x + s.w - tw - gap;
-  x = clamp(x, 4, ed.viewW - tw - 4);
-  const y = clamp(s.y + s.h - th, 4, ed.viewH - th - 4);
-  actionsEl.style.transform = `translate(${x}px, ${y}px)`;
-  actionsEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
+  let x = Infinity; // left edge of the bars
+  if (bars) {
+    ed.barSize ??= { w: actionsEl.offsetWidth, h: actionsEl.offsetHeight };
+    const { w: tw, h: th } = ed.barSize;
+    // Bars to the right of the selection; else to its left; else inside its right edge. Bottom-aligned with it.
+    x = s.x + s.w + gap;
+    if (x + tw > ed.viewW - 4) x = s.x - tw - gap;
+    if (x < 4) x = s.x + s.w - tw - gap;
+    x = clamp(x, 4, ed.viewW - tw - 4);
+    const y = clamp(s.y + s.h - th, 4, ed.viewH - th - 4);
+    actionsEl.style.transform = `translate(${x}px, ${y}px)`;
+    actionsEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
+  }
   // Copy/paste hint: under the selection, right-aligned; inside its bottom edge when there's no room below.
   const { w: hw, h: hh } = ed.hintSize;
   let hy = s.y + s.h + gap;
@@ -583,8 +587,9 @@ function requestPaste(e?: KeyboardEvent): void {
     ed.pendingPaste = true;
     return;
   }
-  void act(window.api.copyPaste);
+  paste();
 }
+const paste = () => void (ed.phase === 'text' ? copyScanned(true) : act(window.api.copyPaste));
 
 /** Window capture: the frontmost window under p. */
 const windowAt = (p: Pt) => ed.windows.find((w) => inBox(p, w)) ?? null;
@@ -598,30 +603,53 @@ function hoverWindow(): void {
   layout();
 }
 
-/** Copy-text mode: OCR the selection, copy its text, say what happened next to the mouse, close. */
-async function scanText(s: Box, at: Pt): Promise<void> {
+/** Copy-text mode, selection done: read the text right away and wait for ⌘C / ⌘V (the hint under the frame). */
+function scanText(s: Box): void {
   ed.selection = s;
   ed.selStart = null;
-  ed.phase = 'exporting';
+  ed.phase = 'text';
   hint.classList.add('hidden');
   layout();
-  const scan = async (): Promise<string> => {
-    const png = await exportPNG(ed.k); // native resolution, whatever the 1x option says
-    const text = layoutText(await window.api.ocr(png));
-    if (ed.selection !== s) return ''; // Esc while scanning: reset() dropped the selection
-    if (!text) return 'No text found'; // the clipboard is left alone
-    await window.api.copyText(text);
-    const n = text.split('\n').length;
-    return `Copied ${n} line${n === 1 ? '' : 's'}`;
-  };
+  const read = async () => layoutText(await window.api.ocr(await exportPNG(ed.k))); // native resolution, whatever the 1x option says
   const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), SCAN_TIMEOUT));
-  // main logs why a scan failed; here it only has to end
-  const msg = await Promise.race([scan(), timeout]).catch(() => 'Could not read the text');
+  const scan = Promise.race([read(), timeout]);
+  ed.scan = scan;
+  // Nothing to copy: say so and let the user select again. main logs why a scan failed.
+  scan
+    .then((text) => (text ? '' : 'No text found'), () => 'Could not read the text')
+    .then((msg) => {
+      if (!msg || ed.selection !== s) return; // Esc or a new selection meanwhile
+      showHud(msg, ed.mouse.x, ed.mouse.y);
+      selectAgain();
+    });
+}
+
+/** ⌘C / Enter / ⌘V in copy-text mode: copy the text that was read (waiting for it if needed), then close or paste. */
+async function copyScanned(paste: boolean): Promise<void> {
+  const s = ed.selection;
+  if (ed.phase !== 'text' || !s || !ed.scan) return;
+  ed.phase = 'exporting'; // block a second trigger
+  layout();
+  const text = await ed.scan.catch(() => '');
+  if (!text || ed.selection !== s) return; // scanText reports an empty or failed scan
+  if (paste) return void window.api.copyText(text, true); // main hides the overlay and pastes
+  await window.api.copyText(text, false);
   if (ed.selection !== s) return;
-  showHud(msg, at.x, at.y);
+  const n = text.split('\n').length;
+  showHud(`Copied ${n} line${n === 1 ? '' : 's'}`, ed.mouse.x, ed.mouse.y);
   setTimeout(() => {
     if (ed.selection === s) window.api.close();
   }, 700);
+}
+
+/** Drop the selection and go back to selecting. */
+function selectAgain(): void {
+  ed.phase = 'selecting';
+  ed.selection = null;
+  hint.classList.remove('hidden');
+  hideLayers();
+  syncToolbar();
+  layout();
 }
 
 /** Selection done: start annotating. */
@@ -653,8 +681,8 @@ const onToolbar = (e: MouseEvent) => !!(e.target as Element).closest('#actions')
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || onToolbar(e)) return;
   const p = pt(e);
-  if (ed.phase === 'selecting') {
-    startSelecting(p);
+  if (ed.phase === 'selecting' || ed.phase === 'text') {
+    startSelecting(p); // copy-text mode: dragging again replaces the selection
     layout();
     return;
   }
@@ -776,7 +804,7 @@ window.addEventListener('mouseup', (e) => {
     const s = norm(ed.selection!);
     // Click without dragging = the window under the mouse (window capture) or the whole screen.
     const box = s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? { x: 0, y: 0, w: ed.viewW, h: ed.viewH } : s;
-    if (ed.mode === 'text') void scanText(box, pt(e));
+    if (ed.mode === 'text') scanText(box);
     else enterEditing(box);
     return;
   }
@@ -807,14 +835,8 @@ window.addEventListener('contextmenu', (e) => {
   if (onToolbar(e) || e.target === textInput) return;
   if (ed.textEdit) return cancelText();
   if (ed.phase === 'editing' && ed.hover) return deleteShape(ed.hover);
-  if (ed.phase === 'editing' && ed.shapes.length === 0) {
-    // Right-click before drawing: drop the selection and select again.
-    ed.phase = 'selecting';
-    ed.selection = null;
-    hint.classList.remove('hidden');
-    hideLayers();
-    syncToolbar();
-    layout();
+  if ((ed.phase === 'editing' && ed.shapes.length === 0) || ed.phase === 'text') {
+    selectAgain(); // right-click before drawing
   } else if (ed.phase === 'selecting' && !ed.selStart) {
     window.api.close();
   }
@@ -882,6 +904,11 @@ window.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') return window.api.close();
+  if (ed.phase === 'text') {
+    if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
+    if ((mod && k === 'c') || e.key === 'Enter') { e.preventDefault(); void copyScanned(false); }
+    return;
+  }
   if (ed.phase !== 'editing') return;
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); return undo(); }
   if ((mod && k === 'z' && e.shiftKey) || (mod && k === 'y')) { e.preventDefault(); return redoAction(); }
@@ -903,7 +930,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (ed.pendingPaste && !modsHeld(e)) {
     ed.pendingPaste = false;
-    void act(window.api.copyPaste);
+    paste();
   }
 });
 
@@ -939,6 +966,7 @@ function reset(): void {
   ed.redo = [];
   ed.hover = null;
   ed.pendingPaste = false;
+  ed.scan = null;
   textInput.classList.add('hidden');
   hud.classList.add('hidden');
   hint.classList.remove('hidden');

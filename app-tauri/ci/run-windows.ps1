@@ -160,10 +160,10 @@ function Suite($app, $p) {
   # The DWM frame of a 600x400 window is a few px smaller than its GetWindowRect (no invisible border).
   Check $app 'Window mode copies the clicked window' ($clip.W -ge 570 -and $clip.W -le 600 -and $clip.H -ge 370 -and $clip.H -le 400) $clip.Size
 
-  # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, read the clipboard.
+  # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Enter, read the clipboard.
   # "Overview" and "Specs" share a row far apart, so they must come out on separate lines.
   # Windows.Media.Ocr needs an OCR language; a runner image without one can't read anything, and then the app
-  # must still close the overlay and leave the clipboard alone.
+  # must say so, stay closable with Esc and leave the clipboard alone.
   [System.Windows.Forms.Clipboard]::Clear()
   $form = New-Object System.Windows.Forms.Form -Property @{
     FormBorderStyle = 'None'; StartPosition = 'Manual'
@@ -182,8 +182,11 @@ function Suite($app, $p) {
   $shown = WaitFor { [K]::Overlay($id) }
   Start-Sleep -Milliseconds 500
   [K]::Drag(160, 130, 740, 510); Start-Sleep -Milliseconds 300
+  Start-Sleep -Milliseconds 1500 # the text is read while the hint is up
   Shot "$app-copy-text"
-  $hidden = WaitFor { -not [K]::Overlay($id) } 8000 # 700 ms of HUD, or the 5 s scan timeout
+  Key Enter; $esc = $false
+  $hidden = WaitFor { -not [K]::Overlay($id) } 3000 # closes 700 ms after copying
+  if (-not $hidden) { Key Esc; $esc = WaitFor { -not [K]::Overlay($id) } }
   Start-Sleep -Milliseconds 500
   $form.Close()
   $text = [System.Windows.Forms.Clipboard]::GetText()
@@ -191,7 +194,7 @@ function Suite($app, $p) {
   if ($script:ocrLanguages -gt 0) {
     Check $app 'Copy text reads the selection' ($shown -and $hidden -and $got -eq 'Overview | Specs | Plain text copied') "'$got'"
   } else {
-    Check $app 'Copy text without an OCR language: overlay closes, clipboard untouched' ($shown -and $hidden -and -not $text) "shown $shown, closed $hidden, clipboard '$got'"
+    Check $app 'Copy text without an OCR language: Esc closes, clipboard untouched' ($shown -and $esc -and -not $text) "shown $shown, Esc closed $esc, clipboard '$got'"
   }
 
   $script:after[$app] = Tree-Memory $p.Id
