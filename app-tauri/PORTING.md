@@ -1,13 +1,13 @@
 # Porting ShoreShot from Electron to Tauri 2
 
-Status of the port of `src/main.ts` (Electron) to `app-tauri/src-tauri/src/` (Rust), **macOS and Windows**.
-The Electron app in `src/` is untouched and stays the shipped app until the release switch-over; nothing here
-is released. `main.rs` is shared and calls only `plat::*`: `mac.rs` on macOS, `win.rs` on Windows (same
+Record of the port of the Electron main process (`src/main.ts`, removed after v2.0.0; see tag `v2.0.0`) to
+`app-tauri/src-tauri/src/` (Rust), **macOS and Windows**. Shipped as v2.0.0. The Windows CI harness no longer
+runs the Electron app as a baseline; the Electron numbers below are from before the removal. `main.rs` is shared and calls only `plat::*`: `mac.rs` on macOS, `win.rs` on Windows (same
 functions). Windows-only parts of `main.rs` are `cfg`-gated; see "Windows" below.
 
 The renderer is shared and unchanged: `build-web.sh` compiles `src/renderer/editor.ts` + `settings.ts` and
 copies `static/*.html|css` into `dist/`, loading `web/api.js` (the `window.api` bridge, replacing
-`src/preload.ts`, same interface as `src/global.d.ts`) before them.
+Electron's `src/preload.ts`, same interface as `src/global.d.ts`) before them.
 
 ## Run
 

@@ -2,84 +2,12 @@
   "name": "shoreshot",
   "productName": "ShoreShot",
   "version": "2.0.0",
-  "description": "Cross-platform screenshot + annotate (rect, text, pen) for Windows and macOS",
-  "main": "dist/main.js",
+  "description": "Screenshot + annotate for macOS and Windows. The app is in app-tauri/; this file holds the version.",
   "author": "Ngưu Nguyễn",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/nguucode/shoreshot.git"
   },
-  "private": true,
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "npm run build && electron .",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win"
-  },
-  "devDependencies": {
-    "@types/node": "^22.9.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
-    "typescript": "^5.6.3"
-  },
-  "build": {
-    "appId": "biz.ontheshore.shoreshot",
-    "afterPack": "scripts/after-pack.js",
-    "productName": "ShoreShot",
-    "directories": {
-      "buildResources": "build",
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "static/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "identity": null,
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.png",
-      "extendInfo": {
-        "LSUIElement": true
-      },
-      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    }
-  },
-  "dependencies": {
-    "node-screenshots": "^0.2.8"
-  }
+  "private": true
 }
