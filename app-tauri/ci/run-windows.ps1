@@ -170,9 +170,10 @@ function Take-Log($src, $name) {
   if (Test-Path $src) { Move-Item $src "$Out/$name" -Force } else { 'no capture.log' | Set-Content "$Out/$name" }
 }
 
-# "visible N" in every capture.log line (Electron: "visible 63"; Tauri may add a note before the number).
+# "visible N" in every capture.log line. Electron: "visible 63 · …"; Tauri: "visible (bitmap ipc 0 ms) 63 · …",
+# so take the last number before the next "·".
 function Latency($log) {
-  $ms = Get-Content $log | ForEach-Object { if ($_ -match 'visible[^·\d]*(\d+)') { [int]$Matches[1] } }
+  $ms = Get-Content $log | ForEach-Object { if ($_ -match 'visible[^·]*?(\d+)\s*(·|$)') { [int]$Matches[1] } }
   if (-not $ms) { return 'n/a' }
   $s = $ms | Sort-Object
   "$($s[0])-$($s[-1]) ms (median $($s[[int][math]::Floor(($s.Count - 1) / 2)]), n=$($s.Count))"
@@ -194,7 +195,9 @@ $env:SHORESHOT_TEST_MODAL = '1'
 $p = Start-Process $Exe -PassThru
 Remove-Item env:SHORESHOT_TEST_MODAL
 $id = [uint32]$p.Id
-$modal = WaitFor { [K]::FindWindow($null, 'ShoreShot modal test') -ne [IntPtr]::Zero } 10000
+# [NullString]::Value, not $null: PowerShell turns $null into "" for a string parameter, and FindWindow("", …)
+# only matches windows whose class name is empty.
+$modal = WaitFor { [K]::FindWindow([NullString]::Value, 'ShoreShot modal test') -ne [IntPtr]::Zero } 10000
 Key Ctrl, Shift, X
 $shown = WaitFor { [K]::Overlay($id) }
 Start-Sleep -Milliseconds 700
@@ -202,7 +205,7 @@ Shot 'tauri-modal-overlay'
 Key Esc
 $closed = WaitFor { -not [K]::Overlay($id) }
 Start-Sleep -Milliseconds 500
-$intact = [K]::FindWindow($null, 'ShoreShot modal test') -ne [IntPtr]::Zero
+$intact = [K]::FindWindow([NullString]::Value, 'ShoreShot modal test') -ne [IntPtr]::Zero
 Shot 'tauri-modal-after-esc'
 Check 'tauri' 'MessageBox open: overlay shows, Esc closes, dialog intact' ($modal -and $shown -and $closed -and $intact) "dialog $modal, shown $shown, closed $closed, intact $intact"
 & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
