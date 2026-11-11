@@ -7,20 +7,20 @@
 //   #stage  committed shapes, sized to the selection, redrawn on undo/redo/text edits.
 //   #draft  the shape being drawn, cleared and redrawn on every mouse move.
 
-type Tool = 'rect' | 'ellipse' | 'line' | 'pen' | 'text';
+type Tool = 'rect' | 'ellipse' | 'line' | 'arrow' | 'pen' | 'text';
 interface Pt { x: number; y: number }
 interface Box { x: number; y: number; w: number; h: number }
 interface Edge { l: boolean; r: boolean; t: boolean; b: boolean }
 interface RectShape { kind: 'rect'; x: number; y: number; w: number; h: number; color: string; size: number }
 interface EllipseShape { kind: 'ellipse'; x: number; y: number; w: number; h: number; color: string; size: number }
-interface LineShape { kind: 'line'; x1: number; y1: number; x2: number; y2: number; color: string; size: number }
+interface LineShape { kind: 'line'; arrow?: boolean; x1: number; y1: number; x2: number; y2: number; color: string; size: number }
 interface PenShape { kind: 'pen'; points: Pt[]; color: string; size: number }
 interface TextShape { kind: 'text'; x: number; y: number; text: string; color: string; size: number }
 type Shape = RectShape | EllipseShape | LineShape | PenShape | TextShape;
 
-const SIZE_LIMITS: Record<Tool, [number, number]> = { rect: [1, 40], ellipse: [1, 40], line: [1, 40], pen: [1, 40], text: [10, 160] };
-const SIZE_STEP: Record<Tool, number> = { rect: 1, ellipse: 1, line: 1, pen: 1, text: 2 };
-const SIZE_LABEL: Record<Tool, string> = { rect: 'Border', ellipse: 'Border', line: 'Stroke', pen: 'Stroke', text: 'Font size' };
+const SIZE_LIMITS: Record<Tool, [number, number]> = { rect: [1, 40], ellipse: [1, 40], line: [1, 40], arrow: [1, 40], pen: [1, 40], text: [10, 160] };
+const SIZE_STEP: Record<Tool, number> = { rect: 1, ellipse: 1, line: 1, arrow: 1, pen: 1, text: 2 };
+const SIZE_LABEL: Record<Tool, string> = { rect: 'Border', ellipse: 'Border', line: 'Stroke', arrow: 'Stroke', pen: 'Stroke', text: 'Font size' };
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const LINE_HEIGHT = 1.2;
 const TEXT_PAD = 8; // frame around the text being typed: drag it to move the text
@@ -35,7 +35,7 @@ const ed = {
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
   color: '#ff3b30',
-  sizes: { rect: 4, ellipse: 4, line: 4, pen: 4, text: 28 } as Record<Tool, number>,
+  sizes: { rect: 4, ellipse: 4, line: 4, arrow: 4, pen: 4, text: 28 } as Record<Tool, number>,
   shapes: [] as Shape[],
   undo: [] as Shape[][], // earlier versions of shapes (each change replaces the array)
   redo: [] as Shape[][],
@@ -161,10 +161,23 @@ function drawShape(c: CanvasRenderingContext2D, s: Shape): void {
     c.strokeStyle = s.color;
     c.lineWidth = s.size;
     c.lineCap = 'round';
+    const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
+    const head = s.arrow ? Math.max(12, s.size * 3 + 8) : 0;
+    const back = Math.min(head * 0.8, Math.hypot(s.x2 - s.x1, s.y2 - s.y1)); // stop the shaft inside the head so the round cap never pokes past the tip
     c.beginPath();
     c.moveTo(s.x1, s.y1);
-    c.lineTo(s.x2, s.y2);
+    c.lineTo(s.x2 - Math.cos(a) * back, s.y2 - Math.sin(a) * back);
     c.stroke();
+    if (s.arrow) {
+      const w = 0.45; // half-angle of the head, ~26°
+      c.fillStyle = s.color;
+      c.beginPath();
+      c.moveTo(s.x2, s.y2);
+      c.lineTo(s.x2 - head * Math.cos(a - w), s.y2 - head * Math.sin(a - w));
+      c.lineTo(s.x2 - head * Math.cos(a + w), s.y2 - head * Math.sin(a + w));
+      c.closePath();
+      c.fill();
+    }
   } else if (s.kind === 'pen') {
     c.strokeStyle = s.color;
     c.fillStyle = s.color;
@@ -660,7 +673,7 @@ window.addEventListener('mousedown', (e) => {
   const style = { color: ed.color, size: ed.sizes[ed.tool] };
   ed.draft =
     ed.tool === 'pen' ? { kind: 'pen', points: [p], ...style }
-    : ed.tool === 'line' ? { kind: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, ...style }
+    : ed.tool === 'line' || ed.tool === 'arrow' ? { kind: 'line', arrow: ed.tool === 'arrow', x1: p.x, y1: p.y, x2: p.x, y2: p.y, ...style }
     : { kind: ed.tool === 'ellipse' ? 'ellipse' : 'rect', x: p.x, y: p.y, w: 0, h: 0, ...style };
   drawDraft();
 });
@@ -852,6 +865,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'r') setTool('rect');
   else if (k === 'o') setTool('ellipse');
   else if (k === 'l') setTool('line');
+  else if (k === 'a') setTool('arrow');
   else if (k === 'p') setTool('pen');
   else if (k === 't') setTool('text');
 });
