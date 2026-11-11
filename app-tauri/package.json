@@ -1,0 +1,14 @@
+{
+  "name": "shoreshot-tauri",
+  "private": true,
+  "scripts": {
+    "web": "sh build-web.sh",
+    "dev": "npm run web && tauri dev",
+    "build": "npm run web && tauri build --bundles app",
+    "bundle": "sh bundle-mac.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "^5.6.3"
+  }
+}

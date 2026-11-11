@@ -85,6 +85,10 @@ Each capture writes one line of step timings (ms since the hotkey) to `~/Library
 tail -f ~/Library/Logs/ShoreShot/capture.log
 ```
 
+### Tauri port (in progress, not shipped)
+
+`app-tauri/` is the start of a port from Electron to Tauri 2 (macOS first) for a much smaller app (issue #41). It reuses `src/renderer/` and `static/` unchanged; the Electron app stays the shipped app until the port reaches parity. Status per feature, how to build and run it, and measurements: [`app-tauri/PORTING.md`](app-tauri/PORTING.md).
+
 ### Releasing a new version
 
 Bump `version` in `package.json`, commit, then either:
