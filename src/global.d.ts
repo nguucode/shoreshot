@@ -1,4 +1,6 @@
-type ShoreShotMode = 'area' | 'full' | 'window';
+type ShoreShotMode = 'area' | 'full' | 'window' | 'text'; // text: select an area, copy the text in it
+/** A piece of recognized text (t) and its box in image pixels, top-left origin. */
+interface OcrFragment { t: string; x: number; y: number; w: number; h: number }
 interface ShoreShotBox { x: number; y: number; w: number; h: number }
 
 interface ShoreShotCapture {
@@ -35,6 +37,10 @@ interface ShoreShotApi {
   copyPaste(png: Uint8Array): Promise<boolean>;
   save(png: Uint8Array): Promise<boolean>;
   close(): void;
+  /** Text in a PNG, as fragments with their box in image pixels (see ocrtext.ts). */
+  ocr(png: Uint8Array): Promise<OcrFragment[]>;
+  /** paste: also hide the overlay and paste into the app used before the capture. */
+  copyText(text: string, paste: boolean): Promise<void>;
   settings: {
     get(): Promise<ShoreShotSettings>;
     setHotkey(mode: ShoreShotMode, accel: string): Promise<ShoreShotSetHotkeyResult>;

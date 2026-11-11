@@ -1,4 +1,4 @@
-//! macOS side: overlay panel, permissions, clipboard, login item, dialogs, paste keystroke.
+//! macOS side: overlay panel, permissions, clipboard, text recognition, login item, dialogs, paste keystroke.
 //!
 //! Dialogs (message boxes, the Save panel) are non-modal: ShoreShot never runs an app-modal loop, so nothing
 //! can lock the overlay (the v1.0.0 freeze) and `run_on_main_thread` never stalls behind a dialog. The
@@ -36,6 +36,8 @@ extern "C" {
     fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
 }
 #[link(name = "ServiceManagement", kind = "framework")]
+extern "C" {}
+#[link(name = "Vision", kind = "framework")]
 extern "C" {}
 
 #[repr(C)]
@@ -154,6 +156,73 @@ pub fn clipboard_text(text: &str) {
         let pb = NSPasteboard::generalPasteboard();
         pb.clearContents();
         pb.setString_forType(&NSString::from_str(text), NSPasteboardTypeString);
+    }
+}
+
+// ---------- text recognition ----------
+pub use vision::ocr;
+
+/// Its own module, like `ui` below: tauri_panel! above imports names that clash.
+mod vision {
+    use objc2::rc::{autoreleasepool, Allocated, Retained};
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2::{msg_send, sel};
+    use objc2_foundation::{NSArray, NSData, NSDictionary, NSNumber, NSRect, NSString};
+
+    /// The text in a PNG, one fragment per line Vision finds (it already splits texts that are far apart on a
+    /// row). English and Vietnamese where the OS has them (Vietnamese: macOS 13+). Blocks for ~100-300 ms: worker thread.
+    pub fn ocr(png: &[u8]) -> Result<Vec<crate::Fragment>, String> {
+        // Vision's boxes are fractions of the image with a bottom-left origin; the size is in the PNG header.
+        if png.len() < 24 {
+            return Err("not a PNG".into());
+        }
+        let px = |at: usize| u32::from_be_bytes([png[at], png[at + 1], png[at + 2], png[at + 3]]) as f64;
+        let (img_w, img_h) = (px(16), px(20));
+        let (Some(request_cls), Some(handler_cls)) =
+            (AnyClass::get(c"VNRecognizeTextRequest"), AnyClass::get(c"VNImageRequestHandler"))
+        else {
+            return Err("Vision is not available".into());
+        };
+        let no_error = std::ptr::null_mut::<*mut AnyObject>();
+        autoreleasepool(|_| unsafe {
+            let request: Retained<AnyObject> = msg_send![request_cls, new];
+            // macOS 12+: ask which languages this OS reads, so an unsupported one never fails the request.
+            let can_ask: bool = msg_send![&*request, respondsToSelector: sel!(supportedRecognitionLanguagesAndReturnError:)];
+            if can_ask {
+                let supported: Option<Retained<NSArray<NSString>>> =
+                    msg_send![&*request, supportedRecognitionLanguagesAndReturnError: no_error];
+                let supported: Vec<String> = supported.iter().flat_map(|a| a.iter()).map(|l| l.to_string()).collect();
+                let languages: Vec<Retained<NSString>> = ["en-US", "vi-VT"] // "vi-VT" is how Vision spells Vietnamese
+                    .iter()
+                    .filter(|l| supported.iter().any(|s| s == *l))
+                    .map(|l| NSString::from_str(l))
+                    .collect();
+                if !languages.is_empty() {
+                    let _: () = msg_send![&*request, setRecognitionLanguages: &*NSArray::from_retained_slice(&languages)];
+                }
+            }
+            let data = NSData::with_bytes(png);
+            let options = NSDictionary::<NSString, NSNumber>::new();
+            let handler: Allocated<AnyObject> = msg_send![handler_cls, alloc];
+            let handler: Retained<AnyObject> = msg_send![handler, initWithData: &*data, options: &*options];
+            let requests = NSArray::from_retained_slice(&[request.clone()]);
+            let ok: bool = msg_send![&*handler, performRequests: &*requests, error: no_error];
+            if !ok {
+                return Err("Vision could not read the image".into());
+            }
+            let results: Option<Retained<NSArray<AnyObject>>> = msg_send![&*request, results];
+            let mut found = Vec::new();
+            for line in results.iter().flat_map(|r| r.iter()) {
+                let candidates: Retained<NSArray<AnyObject>> = msg_send![&*line, topCandidates: 1usize];
+                let Some(best) = candidates.firstObject() else { continue };
+                let text: Retained<NSString> = msg_send![&*best, string];
+                let b: NSRect = msg_send![&*line, boundingBox];
+                let (w, h) = (b.size.width * img_w, b.size.height * img_h);
+                let rect = (b.origin.x * img_w, (1.0 - b.origin.y - b.size.height) * img_h, w, h);
+                found.push(crate::Fragment { text: text.to_string(), rect });
+            }
+            Ok(found)
+        })
     }
 }
 

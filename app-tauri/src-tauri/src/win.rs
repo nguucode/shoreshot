@@ -1,4 +1,4 @@
-//! Windows side: the same functions as mac.rs (overlay, clipboard, paste, login item, dialogs), plus the
+//! Windows side: the same functions as mac.rs (overlay, clipboard, text recognition, paste, login item, dialogs), plus the
 //! WebView2 shared buffer for the bitmap (`post_frame`) and the DPI scale (`scale`).
 //!
 //! Coordinates: the process is per-monitor DPI aware (v2, set by tao), so xcap monitors and windows and the
@@ -254,6 +254,64 @@ fn dib_from_rgba(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+// ---------- text recognition ----------
+/// The words in a PNG with their boxes, from Windows.Media.Ocr (built into Windows 10+, offline). One engine
+/// reads one language: Vietnamese if its language pack is installed (it reads English too), else the user's
+/// languages, else any installed recognizer. Blocks while it runs: worker thread.
+pub fn ocr(png: &[u8]) -> Result<Vec<crate::Fragment>, String> {
+    use windows::Globalization::Language;
+    use windows::Graphics::Imaging::{
+        BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode,
+    };
+    use windows::Media::Ocr::OcrEngine;
+    use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
+
+    let engine = || -> windows::core::Result<OcrEngine> {
+        let vi = Language::CreateLanguage(&"vi".into())?;
+        if OcrEngine::IsLanguageSupported(&vi)? {
+            return OcrEngine::TryCreateFromLanguage(&vi);
+        }
+        OcrEngine::TryCreateFromUserProfileLanguages()
+            .or_else(|_| OcrEngine::TryCreateFromLanguage(&OcrEngine::AvailableRecognizerLanguages()?.GetAt(0)?))
+    };
+    let read = || -> windows::core::Result<Vec<crate::Fragment>> {
+        let stream = InMemoryRandomAccessStream::new()?;
+        let writer = DataWriter::CreateDataWriter(&stream)?;
+        writer.WriteBytes(png)?;
+        writer.StoreAsync()?.join()?;
+        writer.DetachStream()?;
+        stream.Seek(0)?;
+        let decoder = BitmapDecoder::CreateAsync(&stream)?.join()?;
+        // The engine refuses images over MaxImageDimension (a full 4K screen is): scale those down. The page
+        // only compares boxes with each other, so the scale does not matter to it.
+        let (w, h) = (decoder.PixelWidth()? as f64, decoder.PixelHeight()? as f64);
+        let k = (OcrEngine::MaxImageDimension()? as f64 / w.max(h)).min(1.0);
+        let transform = BitmapTransform::new()?;
+        transform.SetScaledWidth(((w * k) as u32).max(1))?;
+        transform.SetScaledHeight(((h * k) as u32).max(1))?;
+        let bitmap = decoder
+            .GetSoftwareBitmapTransformedAsync(
+                BitmapPixelFormat::Bgra8,
+                BitmapAlphaMode::Premultiplied,
+                &transform,
+                ExifOrientationMode::IgnoreExifOrientation,
+                ColorManagementMode::DoNotColorManage,
+            )?
+            .join()?;
+        let result = engine()?.RecognizeAsync(&bitmap)?.join()?;
+        let mut found = Vec::new();
+        for line in result.Lines()? {
+            for word in line.Words()? {
+                let r = word.BoundingRect()?;
+                let rect = (r.X as f64, r.Y as f64, r.Width as f64, r.Height as f64);
+                found.push(crate::Fragment { text: word.Text()?.to_string(), rect });
+            }
+        }
+        Ok(found)
+    };
+    read().map_err(|e| format!("Windows OCR: {e}"))
 }
 
 // ---------- paste ----------

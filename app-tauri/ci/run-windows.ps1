@@ -62,7 +62,7 @@ public static class K {
   }
 }
 "@
-$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; Enter = 0x0D; Esc = 0x1B }
+$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; Two = 0x32; Enter = 0x0D; Esc = 0x1B }
 function Key([string[]]$names) { [K]::Chord([byte[]]($names | ForEach-Object { $VK[$_] })) }
 function Shot($name) { [K]::Shot((Join-Path $Out "$name.png")) }
 function WaitFor([scriptblock]$cond, $ms = 3000) {
@@ -92,10 +92,10 @@ function Clipboard-Image {
   [pscustomobject]@{ Size = if ($img) { "$($img.Width)x$($img.Height)" } else { 'none' }; W = $img.Width; H = $img.Height; Formats = $formats }
 }
 
-# Both apps read hotkeys from config.json: area Ctrl+Shift+X (default), window Ctrl+Shift+W.
+# Hotkeys in config.json: area Ctrl+Shift+X (default), window Ctrl+Shift+W, copy text Ctrl+Shift+2 (default).
 function Write-Config($dir) {
   New-Item -ItemType Directory -Force $dir | Out-Null
-  '{"hotkeys":{"area":"CommandOrControl+Shift+X","full":"","window":"CommandOrControl+Shift+W"},"retina1x":false,"screenAsked":true}' |
+  '{"hotkeys":{"area":"CommandOrControl+Shift+X","full":"","window":"CommandOrControl+Shift+W","text":"CommandOrControl+Shift+2"},"retina1x":false,"screenAsked":true}' |
     Set-Content (Join-Path $dir 'config.json') -Encoding ascii
 }
 
@@ -160,6 +160,43 @@ function Suite($app, $p) {
   # The DWM frame of a 600x400 window is a few px smaller than its GetWindowRect (no invisible border).
   Check $app 'Window mode copies the clicked window' ($clip.W -ge 570 -and $clip.W -le 600 -and $clip.H -ge 370 -and $clip.H -le 400) $clip.Size
 
+  # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Enter, read the clipboard.
+  # "Overview" and "Specs" share a row far apart, so they must come out on separate lines.
+  # Windows.Media.Ocr needs an OCR language; a runner image without one can't read anything, and then the app
+  # must say so, stay closable with Esc and leave the clipboard alone.
+  [System.Windows.Forms.Clipboard]::Clear()
+  $form = New-Object System.Windows.Forms.Form -Property @{
+    FormBorderStyle = 'None'; StartPosition = 'Manual'
+    Location = (New-Object System.Drawing.Point(150, 120)); Size = (New-Object System.Drawing.Size(600, 400))
+    BackColor = 'White'; TopMost = $true; ShowInTaskbar = $false
+  }
+  foreach ($t in @(@('Overview', 30, 60), @('Specs', 360, 60), @('Plain text copied', 30, 200))) {
+    $form.Controls.Add((New-Object System.Windows.Forms.Label -Property @{
+      Text = $t[0]; Location = (New-Object System.Drawing.Point($t[1], $t[2])); AutoSize = $true; ForeColor = 'Black'
+      Font = (New-Object System.Drawing.Font('Segoe UI', 28))
+    }))
+  }
+  $form.Show(); $form.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+  Start-Sleep -Milliseconds 500
+  Key Ctrl, Shift, Two
+  $shown = WaitFor { [K]::Overlay($id) }
+  Start-Sleep -Milliseconds 500
+  [K]::Drag(160, 130, 740, 510); Start-Sleep -Milliseconds 300
+  Start-Sleep -Milliseconds 1500 # the text is read while the hint is up
+  Shot "$app-copy-text"
+  Key Enter; $esc = $false
+  $hidden = WaitFor { -not [K]::Overlay($id) } 3000 # closes 700 ms after copying
+  if (-not $hidden) { Key Esc; $esc = WaitFor { -not [K]::Overlay($id) } }
+  Start-Sleep -Milliseconds 500
+  $form.Close()
+  $text = [System.Windows.Forms.Clipboard]::GetText()
+  $got = (($text -split "`r?`n") | ForEach-Object { $_.Trim() }) -join ' | '
+  if ($script:ocrLanguages -gt 0) {
+    Check $app 'Copy text reads the selection' ($shown -and $hidden -and $got -eq 'Overview | Specs | Plain text copied') "'$got'"
+  } else {
+    Check $app 'Copy text without an OCR language: Esc closes, clipboard untouched' ($shown -and $esc -and -not $text) "shown $shown, Esc closed $esc, clipboard '$got'"
+  }
+
   $script:after[$app] = Tree-Memory $p.Id
   & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
   Start-Sleep 1
@@ -176,6 +213,17 @@ function Latency($log) {
   if (-not $ms) { return 'n/a' }
   $s = $ms | Sort-Object
   "$($s[0])-$($s[-1]) ms (median $($s[[int][math]::Floor(($s.Count - 1) / 2)]), n=$($s.Count))"
+}
+
+# OCR languages on this machine (0 = Windows.Media.Ocr can't read anything). Server images may ship without
+# one: try to add English, and carry on either way.
+function Ocr-Languages {
+  try { [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]::AvailableRecognizerLanguages.Count } catch { 0 }
+}
+$ocrLanguages = Ocr-Languages
+if ($ocrLanguages -eq 0) {
+  try { Add-WindowsCapability -Online -Name 'Language.OCR~~~en-US~0.0.1.0' | Out-Null } catch { Write-Host "OCR capability: $_" }
+  $ocrLanguages = Ocr-Languages
 }
 
 $mem = @{}; $after = @{}; $formats = @{}
@@ -223,6 +271,7 @@ $rows
 | After the suite, private | $($after['tauri'].PrivateMB) MB |
 | Installer | $instMB MB (NSIS) |
 | Clipboard formats after copy | $($formats['tauri']) |
+| OCR languages on the runner | $ocrLanguages |
 
 ### Tauri capture.log
 ``````

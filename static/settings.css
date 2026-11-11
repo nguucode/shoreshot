@@ -34,7 +34,7 @@ body {
 main { display: grid; gap: 18px; padding: 20px; }
 section { display: grid; gap: 8px; }
 .label { font-weight: 600; }
-.row { display: grid; grid-template-columns: 130px 1fr 72px; align-items: center; gap: 8px; }
+.row { display: grid; grid-template-columns: 140px 1fr 72px; align-items: center; gap: 8px; }
 
 .hotkey {
   height: 34px;
