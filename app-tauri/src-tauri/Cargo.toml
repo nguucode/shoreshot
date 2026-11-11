@@ -19,6 +19,13 @@ block2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-single-instance = "2"
+image = { version = "0.25", default-features = false, features = ["png"] }
+webview2-com = "0.39"
+windows-core = "0.62"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Registry", "Win32_System_LibraryLoader", "Win32_System_SystemInformation"] }
+
 [profile.release]
 codegen-units = 1
 lto = true
