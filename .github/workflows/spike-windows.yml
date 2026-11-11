@@ -36,7 +36,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
       - name: Run harness
-        shell: pwsh
+        shell: powershell
         run: |
           $installer = (Get-ChildItem spike/tauri/src-tauri/target/release/bundle/nsis/*.exe).FullName
           spike/tauri/ci/run-windows.ps1 -Exe spike/tauri/src-tauri/target/release/shoreshot-spike.exe `
