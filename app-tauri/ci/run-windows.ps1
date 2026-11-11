@@ -1,11 +1,10 @@
 # Windows end-to-end harness for the Tauri app (GitHub Actions windows-latest, Windows PowerShell 5.1).
 # Drives the real app with real input only (no test hooks except the modal dialog): global hotkeys via
-# keybd_event, mouse drags via SetCursorPos/mouse_event. Runs the same suite against the Electron app on the
-# same machine as the baseline. Writes logs, screenshots and summary.md to $Out; exits 1 if a Tauri check fails.
+# keybd_event, mouse drags via SetCursorPos/mouse_event. Writes logs, screenshots and summary.md to $Out;
+# exits 1 if a check fails.
 param(
   [Parameter(Mandatory)] [string]$Exe,          # Tauri app exe (release build)
   [Parameter(Mandatory)] [string]$Installer,    # Tauri NSIS installer
-  [Parameter(Mandatory)] [string]$RepoRoot,     # Electron app (built with npm run build)
   [Parameter(Mandatory)] [string]$TauriDataDir, # folder of the Tauri app's config.json
   [string]$TauriLog = (Join-Path $env:APPDATA 'ShoreShot\logs\capture.log'),
   [string]$Out = 'windows-out'
@@ -180,10 +179,8 @@ function Latency($log) {
 }
 
 $mem = @{}; $after = @{}; $formats = @{}
-$electronLog = Join-Path $env:APPDATA 'ShoreShot\logs\capture.log'
-Remove-Item $TauriLog, $electronLog -ErrorAction SilentlyContinue
+Remove-Item $TauriLog -ErrorAction SilentlyContinue
 Write-Config $TauriDataDir
-Write-Config (Join-Path $env:APPDATA 'ShoreShot')
 
 # Tauri
 $p = Start-Process $Exe -PassThru
@@ -211,36 +208,25 @@ Check 'tauri' 'MessageBox open: overlay shows, Esc closes, dialog intact' ($moda
 & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
 Take-Log $TauriLog tauri-modal.log
 
-# Electron baseline, same suite, same machine.
-$electronExe = Join-Path $RepoRoot 'node_modules\electron\dist\electron.exe'
-$p = Start-Process $electronExe -ArgumentList "`"$RepoRoot`"" -PassThru
-Suite 'electron' $p
-Take-Log $electronLog electron-capture.log
-
 $tauriLat = Latency "$Out/tauri-capture.log"
-$electronLat = Latency "$Out/electron-capture.log"
-$rows = ($results.Keys | ForEach-Object { "| $_ | $($results[$_]['electron']) | $($results[$_]['tauri']) |" }) -join "`n"
+$rows = ($results.Keys | ForEach-Object { "| $_ | $($results[$_]['tauri']) |" }) -join "`n"
 $instMB = [math]::Round((Get-Item $Installer).Length / 1MB, 1)
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $summary = @"
 ## Windows end-to-end ($($screen.Width)x$($screen.Height), $((Get-CimInstance Win32_OperatingSystem).Caption))
 
-| Check | Electron (from source) | Tauri |
-|---|---|---|
+| Check | Result |
+|---|---|
 $rows
-| Hotkey -> overlay visible | $electronLat | $tauriLat |
-| Idle RAM, private (processes) | $($mem['electron'].PrivateMB) MB ($($mem['electron'].Count)) | $($mem['tauri'].PrivateMB) MB ($($mem['tauri'].Count)) |
-| After the suite, private | $($after['electron'].PrivateMB) MB | $($after['tauri'].PrivateMB) MB |
-| Installer | 78-100 MB (release) | $instMB MB (NSIS) |
-| Clipboard formats after copy | $($formats['electron']) | $($formats['tauri']) |
+| Hotkey -> overlay visible | $tauriLat |
+| Idle RAM, private (processes) | $($mem['tauri'].PrivateMB) MB ($($mem['tauri'].Count)) |
+| After the suite, private | $($after['tauri'].PrivateMB) MB |
+| Installer | $instMB MB (NSIS) |
+| Clipboard formats after copy | $($formats['tauri']) |
 
 ### Tauri capture.log
 ``````
 $(Get-Content "$Out/tauri-capture.log" -Raw)
-``````
-### Electron capture.log
-``````
-$(Get-Content "$Out/electron-capture.log" -Raw)
 ``````
 "@
 $summary | Set-Content "$Out/summary.md"

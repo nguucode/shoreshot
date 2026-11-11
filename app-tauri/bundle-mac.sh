@@ -1,5 +1,5 @@
 #!/bin/sh
-# macOS bundle: ShoreShot.app signed the same way as the Electron build (../scripts/after-pack.js), then a DMG.
+# macOS bundle: ShoreShot.app signed with the same certificate as the 1.x Electron builds, then a DMG + zip.
 # macOS ties Screen Recording / Accessibility grants to the bundle id + signing certificate, so CI must sign
 # with the same fixed self-signed certificate: MAC_SIGN_IDENTITY, set by the "Import signing certificate"
 # step in .github/workflows/build.yml. Without it the app is signed ad-hoc (works, but grants reset).

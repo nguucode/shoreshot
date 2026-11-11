@@ -87,7 +87,7 @@ Each capture writes one line of step timings (ms since the hotkey) to `~/Library
 tail -f ~/Library/Logs/ShoreShot/capture.log
 ```
 
-Up to 1.1.0 ShoreShot was an Electron app (78–100 MB installers). 2.0.0 ships the Tauri port. The Electron main process (`src/main.ts`, `src/preload.ts`) is still in the repo but no longer built for releases.
+Up to 1.1.0 ShoreShot was an Electron app (78–100 MB installers); 2.0.0 is the Tauri port. The Electron code was removed after 2.0.0 (last in tag `v2.0.0`), the Tauri spike too (tags `v1.1.0`–`v2.0.0`).
 
 ### Releasing a new version
 
