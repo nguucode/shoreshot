@@ -23,9 +23,7 @@ jobs:
           node-version: 20
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            app-tauri/ci/wincheck
-            app-tauri/src-tauri
+          workspaces: app-tauri/ci/wincheck # add app-tauri/src-tauri once the app exists
       - name: Windows module unit tests
         working-directory: app-tauri/ci/wincheck
         run: cargo test
