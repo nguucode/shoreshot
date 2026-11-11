@@ -1,8 +1,9 @@
 # Tauri spike: findings
 
-**Update after the Windows run (below): go on macOS, not yet on Windows.** On Windows the WebView2 IPC
-makes Tauri slower than Electron. The bitmap transport has to be replaced, then measured on a real 4K
-display, before the port is committed. Original macOS verdict follows.
+**Current verdict: go on both platforms**, staged, macOS first. On Windows, Tauri's IPC alone was too slow
+for the bitmap (see "Windows" below). Handing it over through a WebView2 shared buffer fixed that: a 4K
+frame now arrives in 20–24 ms instead of 318–332 ms, and hotkey → overlay is on par with Electron.
+Remaining gates: a real 4K / mixed-DPI desktop, the signing identity, and the rest of `main.rs`.
 
 **Recommendation (macOS): go**, for a staged port on macOS first. On every measure the capture path is as fast or
 faster than Electron, the installer is ~50× smaller and idle RAM ~7× lower. The renderer moved over
@@ -126,3 +127,29 @@ Windows gotchas:
   the screenshots.
 - `pwsh` 7 can't compile System.Drawing helpers without extra references; the harness runs in Windows PowerShell 5.1.
 - Not covered: mixed-DPI multi-monitor, 4K, the PowerShell auto-paste, SmartScreen with a 1.2 MB unsigned installer.
+
+## Windows, with a WebView2 shared buffer (run 42979060594)
+
+On Windows `post_frame()` copies the frame into an `ICoreWebView2SharedBuffer`, from
+`ICoreWebView2Environment12::CreateSharedBuffer`, via `WebviewWindow::with_webview`. It then posts that buffer
+with `ICoreWebView2_17::PostSharedBufferToScript`, and the capture metadata rides along as additionalData. The
+page maps the same memory (`sharedbufferreceived`), paints it with `putImageData`, and releases it. The native
+side closes the buffer on the next frame or on hide. `SPIKE_IPC=1` keeps the old path for comparison.
+About 40 lines of Rust and 15 of JS, no new crates beyond `webview2-com`/`windows-core` (already in Tauri's tree).
+
+| Same runner, 1024×768 | Electron | Tauri, IPC | **Tauri, shared buffer** |
+|---|---|---|---|
+| Hotkey → overlay visible | 58–93 ms | 92–112 ms | **55–74 ms** |
+| Transport of a synthetic 4K frame (33 MB) | – | 318–332 ms | **20–24 ms** |
+
+| 4K frame (33 MB) to the page | macOS (WKWebView, IPC) | Windows (WebView2, IPC) | Windows (shared buffer) |
+|---|---|---|---|
+| ms | 14–18 (49 first) | 318–332 | 20–24 |
+
+The shared-buffer path still costs ~15–20 ms between "captured" and "posted": the `with_webview` hop to
+the main thread, buffer creation and a memcpy. A real port could keep one buffer per monitor size and
+capture straight into it. The drawing bench, copy, Esc and the MessageBox test all behaved the same as
+before. The screenshot shows the real desktop painted under the dim layer.
+
+Caveat: the 4K number is a synthetic frame on a 1024×768 VM without a GPU. `putImageData` of a real 4K
+frame, and xcap's capture time at 4K, still need a real desktop.
