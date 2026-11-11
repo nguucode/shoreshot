@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "web": "sh build-web.sh",
+    "test": "npm run web && node ci/ocrtext.test.mjs",
     "dev": "npm run web && tauri dev",
     "build": "npm run web && tauri build --bundles app",
     "bundle": "sh bundle-mac.sh"

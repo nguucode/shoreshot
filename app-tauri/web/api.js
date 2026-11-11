@@ -49,6 +49,8 @@
     copyPaste: (png) => invoke('copy_paste', png),
     save: (png) => invoke('save', png),
     close: () => invoke('close'),
+    ocr: (png) => invoke('ocr', png),
+    copyText: (text) => invoke('copy_text', { text }),
     settings: {
       get: () => invoke('settings_get'),
       setHotkey: (mode, accel) => invoke('settings_set_hotkey', { mode, accel }),

@@ -82,7 +82,7 @@ jobs:
         working-directory: app-tauri
         shell: bash
         run: |
-          npm run web
+          npm test
           npx tauri build --bundles nsis --target ${{ matrix.target }}
           mkdir -p ../release
           cp ../target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe \

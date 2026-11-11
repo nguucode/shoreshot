@@ -27,6 +27,7 @@ const TEXT_PAD = 8; // frame around the text being typed: drag it to move the te
 
 const ed = {
   phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'exporting',
+  mode: 'area' as ShoreShotMode,
   viewW: 0,
   viewH: 0,
   k: 1, // image pixels per CSS px
@@ -76,6 +77,8 @@ const btnUndo = $<HTMLButtonElement>('btnUndo');
 const colorWrap = $('colorCustomWrap');
 const HINT = hint.textContent!;
 const WINDOW_HINT = 'Click a window · Drag to select an area · Esc to exit';
+const TEXT_HINT = 'Drag over the text to copy · Click for the whole screen · Esc to exit';
+const SCAN_TIMEOUT = 5000; // ms: the overlay never waits longer than this for the OCR
 
 /** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips and the hint use {mod}. */
 const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
@@ -541,10 +544,9 @@ function redoAction(): void {
 }
 
 /** PNG of the selection at native resolution. toBlob encodes off the main thread, so the UI doesn't freeze. */
-async function exportPNG(): Promise<Uint8Array> {
+async function exportPNG(k = outScale()): Promise<Uint8Array> {
   commitText();
   const s = norm(ed.selection!);
-  const k = outScale();
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(s.w * k));
   out.height = Math.max(1, Math.round(s.h * k));
@@ -594,6 +596,32 @@ function hoverWindow(): void {
   if (w === ed.selection) return;
   ed.selection = w;
   layout();
+}
+
+/** Copy-text mode: OCR the selection, copy its text, say what happened next to the mouse, close. */
+async function scanText(s: Box, at: Pt): Promise<void> {
+  ed.selection = s;
+  ed.selStart = null;
+  ed.phase = 'exporting';
+  hint.classList.add('hidden');
+  layout();
+  const scan = async (): Promise<string> => {
+    const png = await exportPNG(ed.k); // native resolution, whatever the 1x option says
+    const text = layoutText(await window.api.ocr(png));
+    if (ed.selection !== s) return ''; // Esc while scanning: reset() dropped the selection
+    if (!text) return 'No text found'; // the clipboard is left alone
+    await window.api.copyText(text);
+    const n = text.split('\n').length;
+    return `Copied ${n} line${n === 1 ? '' : 's'}`;
+  };
+  const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), SCAN_TIMEOUT));
+  // main logs why a scan failed; here it only has to end
+  const msg = await Promise.race([scan(), timeout]).catch(() => 'Could not read the text');
+  if (ed.selection !== s) return;
+  showHud(msg, at.x, at.y);
+  setTimeout(() => {
+    if (ed.selection === s) window.api.close();
+  }, 700);
 }
 
 /** Selection done: start annotating. */
@@ -747,7 +775,9 @@ window.addEventListener('mouseup', (e) => {
   if (ed.phase === 'selecting' && ed.selStart) {
     const s = norm(ed.selection!);
     // Click without dragging = the window under the mouse (window capture) or the whole screen.
-    enterEditing(s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? { x: 0, y: 0, w: ed.viewW, h: ed.viewH } : s);
+    const box = s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? { x: 0, y: 0, w: ed.viewW, h: ed.viewH } : s;
+    if (ed.mode === 'text') void scanText(box, pt(e));
+    else enterEditing(box);
     return;
   }
   if (ed.resize) {
@@ -928,10 +958,12 @@ window.api.onCapture((cap) => {
   bgCtx.putImageData(toImageData(cap.bitmap, cap.pxW, cap.pxH, cap.bgra), 0, 0);
   ed.mouse = cap.cursor;
   ed.phase = 'selecting';
+  ed.mode = cap.mode;
   if (cap.mode === 'full') {
     enterEditing({ x: 0, y: 0, w: cap.width, h: cap.height });
   } else {
     if (cap.mode === 'window') hint.textContent = WINDOW_HINT;
+    if (cap.mode === 'text') hint.textContent = TEXT_HINT;
     syncToolbar();
     layout();
   }

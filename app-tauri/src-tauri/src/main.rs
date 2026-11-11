@@ -5,7 +5,7 @@
 //! behind web/api.js.
 //!
 //! Test switches: SHORESHOT_AUTO=n runs n captures 3 s apart without the hotkey (each hides after 1 s),
-//! SHORESHOT_AUTO_MODE=area|full|window|settings picks the mode, SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|… presses
+//! SHORESHOT_AUTO_MODE=area|full|window|text|settings picks the mode, SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|… presses
 //! that key in the page instead of hiding (full mode starts in editing, so Enter copies).
 // Release builds on Windows are GUI apps: no console window next to the tray icon.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -36,17 +36,25 @@ const REPO_URL: &str = "https://github.com/nguucode/shoreshot";
 const UPDATE_CHECK: Duration = Duration::from_secs(12 * 60 * 60);
 const WATCHDOG: Duration = Duration::from_millis(1500);
 
-/// Capture modes, indexed 0..3 everywhere (config, hotkeys, tray).
-const MODES: [&str; 3] = ["area", "full", "window"];
-const MODE_LABEL: [&str; 3] = ["Capture area", "Capture full screen", "Capture window"];
-const DEFAULT_HOTKEYS: [&str; 3] = ["CommandOrControl+Shift+X", "", ""]; // "" = not set
+/// Modes, indexed 0..N everywhere (config, hotkeys, tray). "text" selects an area like "area", then copies
+/// the text in it (OCR) instead of opening the editor.
+const N: usize = 4;
+const MODES: [&str; N] = ["area", "full", "window", "text"];
+const MODE_LABEL: [&str; N] = ["Capture area", "Capture full screen", "Capture window", "Copy text from area"];
+const DEFAULT_HOTKEYS: [&str; N] = ["CommandOrControl+Shift+X", "", "", "CommandOrControl+Shift+2"]; // "" = not set
 
-type Rect = (f64, f64, f64, f64); // x, y, w, h in points (= CSS px)
+/// A piece of recognized text and its box in image pixels, top-left origin. src/renderer/ocrtext.ts lays them out.
+struct Fragment {
+    text: String,
+    rect: Rect,
+}
+
+type Rect = (f64, f64, f64, f64); // x, y, w, h: points (= CSS px) on screen, image pixels in Fragment
 
 /// config.json, same file and shape as Electron's (loadConfig in src/main.ts).
 #[derive(Clone)]
 struct Config {
-    hotkeys: [String; 3],
+    hotkeys: [String; N],
     /// Export at 1x on Retina displays.
     retina1x: bool,
     /// macOS has already shown its Screen Recording prompt (it only asks once).
@@ -57,7 +65,7 @@ struct Config {
 struct State {
     config: Mutex<Option<Config>>,
     /// Registered hotkey per mode (None = not set, invalid or taken by another app).
-    hotkeys: Mutex<[Option<Shortcut>; 3]>,
+    hotkeys: Mutex<[Option<Shortcut>; N]>,
     /// Newer release on GitHub: (version, page url).
     update: Mutex<Option<(String, String)>>,
     // capture
@@ -211,14 +219,14 @@ fn unregister(app: &AppHandle, m: usize) {
     }
 }
 
-fn active(app: &AppHandle) -> [bool; 3] {
+fn active(app: &AppHandle) -> [bool; N] {
     st(app).hotkeys.lock().unwrap().each_ref().map(Option::is_some)
 }
 
 fn register_all(app: &AppHandle) {
     let c = config(app);
     let act = active(app);
-    for m in 0..3 {
+    for m in 0..N {
         if !act[m] {
             register(app, m, &c.hotkeys[m]);
         }
@@ -231,7 +239,7 @@ fn set_hotkey(app: &AppHandle, m: usize, accel: &str) -> Result<String, String> 
     if accel == old && (active(app)[m] || accel.is_empty()) {
         return Ok(old);
     }
-    let taken = (0..3).find(|&o| o != m && !accel.is_empty() && config(app).hotkeys[o] == accel);
+    let taken = (0..N).find(|&o| o != m && !accel.is_empty() && config(app).hotkeys[o] == accel);
     if let Some(t) = taken {
         return Err(format!("{} is already used for {}.", pretty_hotkey(accel), MODE_LABEL[t]));
     }
@@ -303,6 +311,7 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             "area" => start_capture(app, 0),
             "full" => start_capture(app, 1),
             "window" => start_capture(app, 2),
+            "text" => start_capture(app, 3),
             "settings" => open_settings(app),
             "update" => show_update(app),
             "about" => plat::open_url(REPO_URL),
@@ -325,7 +334,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let c = config(app);
     let act = active(app);
     let menu = Menu::new(app)?;
-    for m in 0..3 {
+    for m in 0..N {
         let key = if act[m] { format!("    {}", pretty_hotkey(&c.hotkeys[m])) } else { String::new() };
         menu.append(&MenuItem::with_id(app, MODES[m], format!("{}{key}", MODE_LABEL[m]), true, None::<&str>)?)?;
     }
@@ -363,8 +372,8 @@ fn open_settings(app: &AppHandle) {
     }
     let built = tauri::WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("ShoreShot Settings")
-        // The page gets 410 like Electron; on macOS the title bar takes 32 of the inner size.
-        .inner_size(440.0, if cfg!(windows) { 410.0 } else { 442.0 })
+        // The page gets 452; on macOS the title bar takes 32 of the inner size.
+        .inner_size(440.0, if cfg!(windows) { 452.0 } else { 484.0 })
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -390,7 +399,7 @@ fn open_settings(app: &AppHandle) {
 fn settings_get(app: AppHandle) -> Value {
     let c = config(&app);
     let act = active(&app);
-    let hotkeys: serde_json::Map<String, Value> = (0..3)
+    let hotkeys: serde_json::Map<String, Value> = (0..N)
         .map(|m| {
             let h = &c.hotkeys[m];
             (MODES[m].to_string(), json!({ "hotkey": h, "pretty": pretty_hotkey(h), "active": act[m] }))
@@ -845,6 +854,28 @@ async fn save(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Copy-text mode: the text in the selection (a PNG), as fragments for the page to lay out. Off the main thread.
+#[tauri::command]
+async fn ocr(request: Request<'_>) -> Result<Value, String> {
+    let png = png_body(&request)?;
+    let t = Instant::now();
+    let found = tauri::async_runtime::spawn_blocking(move || plat::ocr(&png)).await.map_err(|e| e.to_string())?;
+    match &found {
+        Ok(f) => log_line(&format!("ocr: {} fragments in {} ms", f.len(), t.elapsed().as_millis())),
+        Err(e) => log_line(&format!("ocr failed: {e}")),
+    }
+    let rows = found?.into_iter().map(|f| {
+        let (x, y, w, h) = f.rect;
+        json!({ "t": f.text, "x": x, "y": y, "w": w, "h": h })
+    });
+    Ok(rows.collect())
+}
+
+#[tauri::command]
+fn copy_text(app: AppHandle, text: String) {
+    let _ = app.run_on_main_thread(move || plat::clipboard_text(&text));
+}
+
 #[tauri::command]
 fn log(line: String) {
     log_line(&line);
@@ -881,6 +912,8 @@ fn main() {
             copy,
             copy_paste,
             save,
+            ocr,
+            copy_text,
             log,
             settings_get,
             settings_set_hotkey,
@@ -898,7 +931,7 @@ fn main() {
             create_tray(&handle)?;
             plat::create_overlay(&handle)?; // created up front so the hotkey shows it instantly
             let c = config(&handle);
-            if (0..3).any(|m| !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
+            if (0..N).any(|m| !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
                 open_settings(&handle); // a saved hotkey is taken by another app: let the user pick another
             }
             let h = handle.clone();
@@ -961,5 +994,8 @@ mod tests {
         assert_eq!(clip((5000.0, 100.0, 50.0, 50.0), d2, 1.5), None); // 33 CSS px: a sliver
         let c = parse_config(&json!({ "hotkey": "Alt+Q", "retina1x": true }));
         assert_eq!((c.hotkeys[0].as_str(), c.hotkeys[1].as_str(), c.retina1x, c.screen_asked), ("Alt+Q", "", true, false));
+        // Configs from before copy-text get its default hotkey, and that default is a valid shortcut.
+        assert_eq!(c.hotkeys[3], DEFAULT_HOTKEYS[3]);
+        assert!(parse_accel(DEFAULT_HOTKEYS[3]).is_some());
     }
 }

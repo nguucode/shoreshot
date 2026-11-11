@@ -1,10 +1,10 @@
-// Settings window: capture hotkeys (area / full screen / window), options (Retina 1x, open at login), version + links.
+// Settings window: hotkeys (area / full screen / window capture, copy text), options (Retina 1x, open at login), version + links.
 // Wrapped in an IIFE so its globals don't clash with editor.ts.
 (() => {
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const msg = el<HTMLParagraphElement>('msg');
   const isMac = navigator.platform.toLowerCase().includes('mac');
-  const MODES: ShoreShotMode[] = ['area', 'full', 'window'];
+  const MODES: ShoreShotMode[] = ['area', 'full', 'window', 'text'];
   const fields = Object.fromEntries(
     MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`)!]),
   ) as Record<ShoreShotMode, HTMLButtonElement>;

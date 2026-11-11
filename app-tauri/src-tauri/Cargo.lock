@@ -3778,6 +3778,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "webview2-com",
+ "windows",
  "windows-core",
  "windows-sys 0.59.0",
  "xcap",

@@ -5,12 +5,13 @@ set -e
 cd "$(dirname "$0")"
 find src-tauri -name '._*' -delete # exFAT AppleDouble files: tauri-build parses everything it finds
 rm -rf dist && mkdir -p dist
-npx tsc ../src/renderer/editor.ts ../src/renderer/settings.ts ../src/global.d.ts --target ES2022 \
+npx tsc ../src/renderer/ocrtext.ts ../src/renderer/editor.ts ../src/renderer/settings.ts ../src/global.d.ts --target ES2022 \
   --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --rootDir ../src --outDir dist/tsc
 cp dist/tsc/renderer/*.js ../static/*.css web/api.js dist/ && rm -rf dist/tsc
 # The pages' CSP has no connect-src for Tauri's IPC transport, so widen it.
 for page in editor settings; do
   sed -e "s#<script src=\"../dist/renderer/$page.js\"></script>#<script src=\"api.js\"></script><script src=\"$page.js\"></script>#" \
+      -e "s#../dist/renderer/ocrtext.js#ocrtext.js#" \
       -e "s#default-src 'self';#default-src 'self'; connect-src ipc: http://ipc.localhost;#" \
       "../static/$page.html" > "dist/$page.html"
   grep -q 'api.js' "dist/$page.html"

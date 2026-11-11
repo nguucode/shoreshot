@@ -45,9 +45,9 @@ opens a MessageBox on the main thread 3 s after start (the CI safety test).
 | Feature (src/main.ts) | Status | Notes |
 |---|---|---|
 | Tray icon (template image from `assets/`) | Done | `trayTemplate@2x.png`, `icon_as_template`. Tooltip shows the area hotkey. |
-| Tray menu: 3 capture modes with hotkey labels, Settings…, Update to x…, About x.y.z, Report an issue…, Quit | Done | Rebuilt on the main thread whenever hotkeys or the update change. |
-| Three global hotkeys, saved in `config.json` | Done | Same file (`~/Library/Application Support/ShoreShot/config.json`) and shape, incl. the 0.1.11 single `hotkey` migration. Electron accelerator names are mapped to global-hotkey's (`numsub` etc.). Taken hotkey on startup opens Settings. |
-| Settings window (`static/settings.html` + `src/renderer/settings.ts`) | Done | Unchanged page, verified on screen (window is 442 pt tall so WebKit gets Electron's 410 px of content). Set / clear / default hotkey, duplicate + taken checks with the old hotkey restored, recording pauses all hotkeys, Retina 1×, open at login, version, update link, About / Report links. |
+| Tray menu: 3 capture modes and copy text with hotkey labels, Settings…, Update to x…, About x.y.z, Report an issue…, Quit | Done | Rebuilt on the main thread whenever hotkeys or the update change. |
+| Global hotkeys (3 capture modes + copy text), saved in `config.json` | Done | Same file (`~/Library/Application Support/ShoreShot/config.json`) and shape, incl. the 0.1.11 single `hotkey` migration. Electron accelerator names are mapped to global-hotkey's (`numsub` etc.). Taken hotkey on startup opens Settings. |
+| Settings window (`static/settings.html` + `src/renderer/settings.ts`) | Done | Unchanged page, verified on screen (window is 484 pt tall so WebKit gets 452 px of content: Electron's 410 plus the copy text row). Set / clear / default hotkey, duplicate + taken checks with the old hotkey restored, recording pauses all hotkeys, Retina 1×, open at login, version, update link, About / Report links. |
 | Capture: xcap, display under the cursor | Done | Same as the spike. |
 | NSPanel overlay: screen-saver level, all Spaces, full-screen auxiliary, non-activating, `worksWhenModal` | Done | Created hidden at startup. |
 | Alpha-0 show, reveal on the page's `ready` | Done | |
@@ -78,7 +78,7 @@ way on the same machine as the baseline. The runner is 1024×768 at 100 %, no GP
 |---|---|---|
 | Tray icon, menu, left click = capture area | Done | `assets/tray.png`; menu on right click (`show_menu_on_left_click(false)`), left click starts an area capture like Electron. |
 | Hotkeys, `config.json` | Done | Same file as Electron: `%APPDATA%\ShoreShot\config.json`. Labels read `Ctrl+Shift+X`. |
-| Settings window | Done (not tested on CI) | Same page; inner size 440×410 (no title-bar offset on Windows). |
+| Settings window | Done (not tested on CI) | Same page; inner size 440×452 (no title-bar offset on Windows). |
 | Capture: xcap, display under the cursor | Done | Physical pixels: monitor, cursor (`GetCursorPos`) and windows are all physical in a per-monitor-DPI-aware process. |
 | Overlay | Done | Always-on-top WebView2 window, shown at −32000 until the page has painted, then moved onto the monitor and focused. WebView2 doesn't render into layered windows, and a hidden one pauses `requestAnimationFrame`, so there is no opacity 0 here. Ctrl+P, F5, Ctrl+wheel / pinch zoom and the context menu are off in the overlay. |
 | Bitmap to the page | Done | WebView2 shared buffer (`CreateSharedBuffer` + `PostSharedBufferToScript`), metadata as additionalData. Tauri IPC is the fallback (`send_ipc`), and the only path on macOS. |

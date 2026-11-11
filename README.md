@@ -11,6 +11,7 @@ Website: https://shoreshot.ontheshore.biz
 | Capture area | Global hotkey, `⌘⇧X` (macOS) / `Ctrl+Shift+X` (Windows) by default, **changeable** in Settings. Drag to select an area, single click = whole screen. Drag an edge or corner of the frame to adjust the selection (works after drawing too). Captures the display under the mouse cursor. Exports at native resolution (Retina / HiDPI), or at 1× if you turn that on in Settings. |
 | Capture full screen | Selects the whole display under the cursor and goes straight to annotating. No hotkey by default: assign one in Settings, or use the tray menu. |
 | Capture window | Hover to frame the window under the cursor, click to select it (what is visible on screen in that window's frame). Dragging still selects an area; clicking the empty desktop selects the whole screen. No hotkey by default: assign one in Settings, or use the tray menu. |
+| Copy text from area | Global hotkey, `⌘⇧2` (macOS) / `Ctrl+Shift+2` (Windows) by default, changeable in Settings; also in the tray menu. Drag over an area (single click = whole screen): ShoreShot reads the text in it and copies it as plain text, then closes, showing `Copied 9 lines`, `No text found` or `Could not read the text` next to the mouse. The clipboard is left alone when nothing is found. One line of text per line on screen; texts side by side (tabs, buttons, table cells) each get their own line; bullets become `- `, nested ones indented. Recognition is the system's own and works offline: Vision on macOS (English and Vietnamese, Vietnamese needs macOS 13+), Windows OCR on Windows (Vietnamese if its language pack is installed, otherwise your Windows language). |
 | Rectangle | Tool `R`. Hold `Shift` for a square. Scroll to change the border width (1 to 40px), even while dragging. |
 | Ellipse | Tool `O`. Hold `Shift` for a circle. Scroll to change the border width. |
 | Line | Tool `L`. Scroll to change the stroke width. |
@@ -22,7 +23,7 @@ Website: https://shoreshot.ontheshore.biz
 | Export | `⌘/Ctrl+C`: copy to clipboard. `⌘/Ctrl+S`: save PNG (Pictures by default). |
 | Copy + paste | `⌘V` / `Ctrl+V`: copy, then paste straight into the app you were using before the capture (Slack, Telegram, Figma…). |
 | Other | `Enter`: copy. `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` or `Ctrl+Y` redo, `Esc` exit. Right-click before drawing = select again. Two vertical bars sit to the right of the selection, bottom-aligned: tools (shapes, colors, size) and actions (undo, cancel, save, copy). The copy/paste shortcuts are shown under the selection. Hover a button to see its name and shortcut. |
-| Settings | Tray menu > **Settings…**: hotkeys for area / full screen / window capture, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
+| Settings | Tray menu > **Settings…**: hotkeys for area / full screen / window capture and copy text, export at 1× on Retina displays, open at login. The footer shows the version and links to About and Report an issue. |
 | Updates | ShoreShot checks GitHub Releases at startup and every 12 hours. When a newer version is out it shows a notification and an **Update to x.y.z…** item in the tray menu, with the command to run. |
 
 Scroll up = bigger, scroll down = smaller. Trackpad scrolling is accumulated so it doesn't jump too fast.
@@ -75,6 +76,7 @@ Requires Node.js 18+ and Rust (rustup). The app lives in `app-tauri/` and reuses
 git clone https://github.com/nguucode/shoreshot.git && cd shoreshot/app-tauri
 npm install
 npm run dev                                   # run in dev
+npm test                                      # check the copy-text line layout
 sh bundle-mac.sh                              # signed .app, .dmg + .zip (Intel: TARGET=x86_64-apple-darwin)
 npx tauri build --bundles nsis                # Windows installer (after npm run web)
 ```
@@ -105,7 +107,7 @@ macOS ties Screen Recording / Accessibility permissions to the app's signature, 
 
 ## Changing the hotkeys
 
-Menu bar / tray icon > **Settings…** > click the field next to **Capture area**, **Capture full screen** or **Capture window** > press the new combination. The app registers it right away; if the combination is taken by the system, another app or another ShoreShot capture, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** puts the area hotkey back to `⌘⇧X` / `Ctrl+Shift+X`; **Clear** removes the full screen / window hotkey.
+Menu bar / tray icon > **Settings…** > click the field next to **Capture area**, **Capture full screen**, **Capture window** or **Copy text from area** > press the new combination. The app registers it right away; if the combination is taken by the system, another app or another ShoreShot capture, it shows an error and keeps the old hotkey. At least one modifier is required, except for `F1` to `F24` and `PrintScreen`. **Default** puts the area hotkey back to `⌘⇧X` / `Ctrl+Shift+X` and the copy text hotkey back to `⌘⇧2` / `Ctrl+Shift+2`; **Clear** removes the full screen / window hotkey.
 
 Settings are stored in `config.json` in the userData folder (macOS: `~/Library/Application Support/ShoreShot/`, Windows: `%APPDATA%\ShoreShot\`). If a saved hotkey is taken by another app at startup, the Settings window opens automatically.
 
@@ -120,9 +122,10 @@ Windows 11 note: `PrintScreen` is usually assigned to Snipping Tool. To use it, 
 ## Layout
 
 ```
-app-tauri/src-tauri/     the app: tray, hotkeys + config, capture, clipboard, auto-paste, save (Rust, macOS + Windows)
+app-tauri/src-tauri/     the app: tray, hotkeys + config, capture, clipboard, text recognition, auto-paste, save (Rust, macOS + Windows)
 app-tauri/web/api.js     window.api bridge for the renderer (Tauri IPC)
 src/renderer/editor.ts   overlay for selecting an area + drawing annotations (canvas)
+src/renderer/ocrtext.ts  copy text: turns recognized fragments into lines and bullets (check: `npm test` in app-tauri)
 src/renderer/settings.ts Settings window: hotkey recording, options
 static/                  HTML/CSS for the overlay and Settings
 scripts/install.sh|.ps1  terminal install/uninstall (macOS/Windows)
