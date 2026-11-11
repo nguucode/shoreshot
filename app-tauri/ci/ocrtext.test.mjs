@@ -59,6 +59,33 @@ assert.equal(layoutText([f('Big', 20, 10, 80, 40), f('x', 120, 12, 10, 12), f('s
 assert.equal(layoutText([]), '');
 assert.equal(layoutText([f('•', 10, 10, 8, 14)]), ''); // a lone icon is not text
 
+// An emoji misread as "•." or "{" at the start of a row is dropped, not kept as text or made a bullet.
+assert.equal(layoutText([f('•. Support the channel', 20, 10, 200, 14)]), 'Support the channel');
+
+// Wrapped lines join into their paragraph, but not across a paragraph gap; short stacked labels and bullets stay
+// one per line; a wrapped bullet keeps its second line.
+const prose = [
+  f('Normally the podcast series is for members only. But today we decided to', 20, 10, 600, 14),
+  f('make it public for everyone. This is a far more complete remake than the', 20, 30, 598, 14),
+  f('old version. •', 20, 50, 90, 14),
+  f('In this new script the story has been restructured into one that links to Dark', 20, 90, 602, 14),
+  f('Souls 2 and Dark Souls 3.', 20, 110, 190, 14),
+  f('Overview', 20, 150, 76, 14),
+  f('Guidelines', 20, 170, 76, 14),
+  f('• First item that is long enough to reach the right edge of the block and wrap', 20, 210, 600, 14),
+  f('onto a second line', 34, 230, 130, 14),
+  f('• Second', 20, 250, 70, 14),
+];
+assert.equal(
+  layoutText(prose),
+  `Normally the podcast series is for members only. But today we decided to make it public for everyone. This is a far more complete remake than the old version.
+In this new script the story has been restructured into one that links to Dark Souls 2 and Dark Souls 3.
+Overview
+Guidelines
+- First item that is long enough to reach the right edge of the block and wrap onto a second line
+- Second`,
+);
+
 // Translate direction: Vietnamese goes to English, everything else to Vietnamese (French accents are not Vietnamese).
 assert.equal(translateTarget('Sao chép văn bản'), 'en');
 assert.equal(translateTarget('ĐƯỜNG DẪN'), 'en');
