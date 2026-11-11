@@ -51,6 +51,7 @@
     close: () => invoke('close'),
     ocr: (png) => invoke('ocr', png),
     copyText: (text, paste) => invoke('copy_text', { text, paste }),
+    translate: (text, to) => invoke('translate', { text, to }),
     settings: {
       get: () => invoke('settings_get'),
       setHotkey: (mode, accel) => invoke('settings_set_hotkey', { mode, accel }),

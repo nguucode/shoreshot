@@ -490,14 +490,21 @@ fn is_newer(a: &str, b: &str) -> bool {
     false
 }
 
-/// Ask GitHub for the latest release; on a newer one, add a tray item (and a link in Settings).
-fn check_for_update(app: &AppHandle) {
-    let mut curl = std::process::Command::new("curl"); // ships with Windows 10 1803+ too
-    curl.args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json"])
-        .arg("https://api.github.com/repos/nguucode/shoreshot/releases/latest");
+/// `curl`, which ships with macOS and Windows 10 1803+: ShoreShot's only way onto the network.
+fn curl() -> std::process::Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut curl = std::process::Command::new("curl");
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(&mut curl, 0x0800_0000); // CREATE_NO_WINDOW
-    let out = curl.output();
+    curl
+}
+
+/// Ask GitHub for the latest release; on a newer one, add a tray item (and a link in Settings).
+fn check_for_update(app: &AppHandle) {
+    let out = curl()
+        .args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json"])
+        .arg("https://api.github.com/repos/nguucode/shoreshot/releases/latest")
+        .output();
     let Ok(out) = out else { return }; // offline: try again on the next check
     let Ok(v) = serde_json::from_slice::<Value>(&out.stdout) else { return };
     let (Some(tag), Some(url)) = (v["tag_name"].as_str(), v["html_url"].as_str()) else { return };
@@ -891,6 +898,44 @@ fn copy_text(app: AppHandle, text: String, paste: bool) {
     });
 }
 
+/// Copy-text mode, ⌘T: `text` in Vietnamese (`to` = "vi") or English ("en"), from Google Translate's free
+/// endpoint (no key; unofficial, so it can change or refuse). The only time text from the screen leaves the
+/// machine, and only on that key. The text goes to curl on stdin: no length limit, nothing in the process list.
+#[tauri::command]
+async fn translate(text: String, to: String) -> Result<String, String> {
+    if to != "vi" && to != "en" {
+        return Err("unknown language".into());
+    }
+    let run = move || -> Result<String, String> {
+        use std::process::Stdio;
+        let url = format!("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={to}&dt=t");
+        let mut child = curl()
+            .args(["-fsS", "--max-time", "10", "--data-urlencode", "q@-", &url])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        child.stdin.take().expect("piped").write_all(text.as_bytes()).map_err(|e| e.to_string())?; // drop = EOF
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        serde_json::from_slice(&out.stdout).ok().and_then(|v| parse_translation(&v)).ok_or("unexpected reply".into())
+    };
+    let done = tauri::async_runtime::spawn_blocking(run).await.map_err(|e| e.to_string())?;
+    if let Err(e) = &done {
+        log_line(&format!("translate failed: {e}"));
+    }
+    done
+}
+
+/// The reply is `[[[translated, original, …], …], null, "en", …]`: the translated pieces, in order.
+fn parse_translation(reply: &Value) -> Option<String> {
+    let text: String = reply[0].as_array()?.iter().filter_map(|piece| piece[0].as_str()).collect();
+    (!text.is_empty()).then_some(text)
+}
+
 #[tauri::command]
 fn log(line: String) {
     log_line(&line);
@@ -929,6 +974,7 @@ fn main() {
             save,
             ocr,
             copy_text,
+            translate,
             log,
             settings_get,
             settings_set_hotkey,
@@ -1012,5 +1058,9 @@ mod tests {
         // Configs from before copy-text get its default hotkey, and that default is a valid shortcut.
         assert_eq!(c.hotkeys[3], DEFAULT_HOTKEYS[3]);
         assert!(parse_accel(DEFAULT_HOTKEYS[3]).is_some());
+        // A real reply from the translate endpoint, trimmed.
+        let reply = json!([[["Nút\n", "Button\n", null, null, 3], ["- Tổng quan", "- Overview", null, null, 3]], null, "en"]);
+        assert_eq!(parse_translation(&reply).as_deref(), Some("Nút\n- Tổng quan"));
+        assert_eq!(parse_translation(&json!([null, null, "en"])), None);
     }
 }

@@ -3,20 +3,23 @@
 //
 // - Fragments on the same row are joined with a space; a gap wider than GAP × the row's text height starts a new line
 //   (tabs, table cells, buttons side by side each get their own line).
-// - One output line per visual line: wrapped paragraphs are not merged.
+// - A paragraph that wraps over several lines on screen comes out as one line; anything else is one line per line.
 // - A bullet at the start of a row becomes "- ", indented two spaces per level. The same glyph later in a row is an
 //   icon the OCR misread, and is dropped along with other icon-only tokens.
 
 const OCR_GAP = 1.5;
+const OCR_PARAGRAPH_STEP = 1.4; // × the usual line pitch: a bigger step down starts a new paragraph
+const OCR_LONG_LINE = 12; // × text height: shorter lines are labels, not prose that wraps
 const OCR_BULLETS = '•·‣◦▪■●○∙';
 const OCR_ICON_GLYPHS = OCR_BULLETS + '‹›«»□▸▶►';
 const ocrOnly = (token: string, chars: string) => token !== '' && [...token].every((c) => chars.includes(c));
 const ocrBullet = (token: string) => ocrOnly(token, OCR_BULLETS) || token === '-';
-/** A misread icon: only icon glyphs and < > |, with at least one glyph (so a real "> npm test" or "| a | b" is kept). */
-const ocrIcon = (token: string) =>
-  ocrOnly(token, OCR_ICON_GLYPHS + '<>|') && [...token].some((c) => OCR_ICON_GLYPHS.includes(c));
+/** A misread icon or emoji: no letter or digit, and at least one icon glyph ("‹>", "•."; a real "> npm test" is kept). */
+const ocrIcon = (token: string) => !/[\p{L}\p{N}]/u.test(token) && [...token].some((c) => OCR_ICON_GLYPHS.includes(c));
 
-function layoutText(fragments: OcrFragment[]): string {
+interface OcrLine { text: string; bulletX: number | null; x: number; right: number; cy: number; h: number }
+
+function ocrLines(fragments: OcrFragment[]): OcrLine[] {
   // Rows: fragments whose vertical centre is close to that of the row's first fragment. "Close" is measured by the
   // smaller of the two, so small lines stacked beside a big heading stay separate; `h` (for the gap) is the tallest.
   const rows: { cy: number; h0: number; h: number; items: OcrFragment[] }[] = [];
@@ -31,7 +34,7 @@ function layoutText(fragments: OcrFragment[]): string {
     }
   }
 
-  const lines: { text: string; bulletX: number | null; h: number }[] = [];
+  const lines: OcrLine[] = [];
   for (const row of rows) {
     row.items.sort((a, b) => a.x - b.x);
     let words: string[] = [];
@@ -47,7 +50,9 @@ function layoutText(fragments: OcrFragment[]): string {
       } else {
         while (ocrIcon(words[0] ?? '')) words.shift();
       }
-      if (words.length) lines.push({ text: words.join(' '), bulletX, h: row.h });
+      while (ocrIcon(words[words.length - 1] ?? '')) words.pop(); // an emoji at the end of a line
+      // " ,": the OCR puts a space after an inline chip or code span; no language writes a comma that way.
+      if (words.length) lines.push({ text: words.join(' ').replace(/ ,/g, ','), bulletX, x: startX, right: end, cy: row.cy, h: row.h });
       first = false;
       words = [];
     };
@@ -68,11 +73,49 @@ function layoutText(fragments: OcrFragment[]): string {
   for (const l of [...lines].filter((l) => l.bulletX !== null).sort((a, b) => a.bulletX! - b.bulletX!)) {
     if (!levels.length || l.bulletX! - levels[levels.length - 1] > l.h / 2) levels.push(l.bulletX!);
   }
-  return lines
-    .map((l) => {
-      if (l.bulletX === null) return l.text;
-      const level = levels.filter((x) => x <= l.bulletX!).length - 1;
-      return `${'  '.repeat(level)}- ${l.text}`;
+  return lines.map((l) => {
+    if (l.bulletX === null) return l;
+    const level = levels.filter((x) => x <= l.bulletX!).length - 1;
+    return { ...l, text: `${'  '.repeat(level)}- ${l.text}` };
+  });
+}
+
+/** The text to copy (and to translate): the lines, with the wrapped lines of a paragraph joined into one. */
+function layoutText(fragments: OcrFragment[]): string {
+  const lines = ocrLines(fragments);
+  // Blocks: runs of lines one line pitch apart. A paragraph never continues across a bigger step. The pitch is the
+  // median step between lines in this scan (boxes differ too much between OCR engines to go by the gap between them).
+  const steps = lines.map((l, i) => (i ? l.cy - lines[i - 1].cy : 0)).filter((d, i) => i && d > lines[i].h / 2);
+  const pitch = [...steps].sort((a, b) => a - b)[Math.floor((steps.length - 1) / 2)] ?? Infinity;
+  const blocks: OcrLine[][] = [];
+  lines.forEach((l, i) => {
+    if (!i || l.cy - lines[i - 1].cy > OCR_PARAGRAPH_STEP * pitch) blocks.push([l]);
+    else blocks[blocks.length - 1].push(l);
+  });
+  return blocks
+    .map((block) => {
+      const left = Math.min(...block.map((l) => l.x));
+      const width = Math.max(...block.map((l) => l.right)) - left;
+      let out = '';
+      block.forEach((l, i) => {
+        const prev = block[i - 1];
+        // A line wraps into the next one when it is long, runs to the right edge of the block, does not end a
+        // sentence, and the next one is below it and not a new bullet. Short stacked labels (menus, buttons) stay
+        // one per line; a line that ends a sentence keeps its break, which costs nothing.
+        // ponytail: the block's own widest line stands in for the column width, so list lines of nearly equal
+        // length can join. Needs the real column edge (or sentence punctuation) to tell those apart.
+        const wrapped =
+          prev && l.bulletX === null && l.cy - prev.cy > prev.h / 2 &&
+          prev.right - prev.x > OCR_LONG_LINE * prev.h && prev.right - left > 0.85 * width &&
+          !/[.!?:;…]$/.test(prev.text);
+        // A line broken at a hyphen ("translate-" / "scanned-text") continues without a space.
+        const glue = wrapped ? (/[\p{L}\p{N}]-$/u.test(prev.text) ? '' : ' ') : '\n';
+        out += (i ? glue : '') + l.text;
+      });
+      return out;
     })
     .join('\n');
 }
+
+/** Translate into: English if the text has letters only Vietnamese uses (ă đ ơ ư and the tone-marked vowels), else Vietnamese. */
+const translateTarget = (text: string): 'vi' | 'en' => (/[ăđơư\u1EA0-\u1EF9]/i.test(text) ? 'en' : 'vi');

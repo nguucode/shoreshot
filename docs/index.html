@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ShoreShot – capture, mark up, paste</title>
-<meta name="description" content="A free screenshot tool for macOS and Windows. Press one hotkey, mark it up, paste it back into the app you were using.">
+<meta name="description" content="A free screenshot tool for macOS and Windows. Press one hotkey, mark it up, paste it back into the app you were using. Or copy the text out of what is on screen, and translate it.">
 <meta property="og:title" content="ShoreShot – capture, mark up, paste">
 <meta property="og:description" content="A free screenshot tool for macOS and Windows.">
 <meta property="og:image" content="https://shoreshot.ontheshore.biz/shot-2.jpg?v=full">
@@ -127,11 +127,12 @@ section.block { padding: 120px 0 0; }
 /* Mock: tray menu */
 .menu { width: min(300px, 100%); background: var(--raised); border-radius: 14px; padding: 6px; box-shadow: 0 24px 50px -20px rgba(30, 50, 90, .35), 0 0 0 1px var(--line); font-size: 14px; text-align: left; }
 .menu div { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 8px; }
-.menu div:nth-child(-n+3) { animation: pick 6s ease-in-out infinite; }
+.menu div:nth-child(-n+4) { animation: pick 8s ease-in-out infinite; }
 .menu div:nth-child(2) { animation-delay: 2s; }
 .menu div:nth-child(3) { animation-delay: 4s; }
-@keyframes pick { 0%, 38.34%, 100% { background: transparent; color: inherit; } 5%, 33.33% { background: var(--accent); color: #fff; } }
-.menu div:nth-child(-n+3) kbd { color: inherit; }
+.menu div:nth-child(4) { animation-delay: 6s; }
+@keyframes pick { 0%, 28.75%, 100% { background: transparent; color: inherit; } 3.75%, 25% { background: var(--accent); color: #fff; } }
+.menu div:nth-child(-n+4) kbd { color: inherit; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
 .menu kbd { font: 12px var(--mono); color: var(--faint); }
 
@@ -158,6 +159,23 @@ section.block { padding: 120px 0 0; }
 .chat .line { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; color: var(--faint); font-size: 14px; }
 .chat .line span:last-child { display: flex; gap: 4px; }
 .chat kbd { font: 500 12px var(--mono); min-width: 26px; padding: 3px 7px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; color: var(--fg); text-align: center; }
+
+/* Mock: a selection being read, with the app's hint under it */
+.scan { width: min(340px, 100%); display: grid; gap: 10px; justify-items: end; text-align: left; }
+.scan .frame { position: relative; width: 100%; padding: 16px 18px; background: var(--raised); box-shadow: 0 0 0 1.5px var(--accent), 0 24px 50px -20px rgba(30, 50, 90, .35); font-size: 14px; line-height: 1.5; overflow: hidden; }
+.scan .frame b { display: block; font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin-bottom: 4px; }
+.scan .frame::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 34%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 20%, transparent), transparent); animation: sweep 4s var(--ease) infinite; }
+@keyframes sweep { 0% { transform: translateX(-110%); } 50%, 100% { transform: translateX(320%); } }
+.scan .hint { padding: 6px 11px; border-radius: 8px; background: rgba(28, 28, 30, .94); color: #aeaeb2; font-size: 12px; font-weight: 500; }
+.scan .hint kbd { font: inherit; color: #f2f2f7; }
+
+/* Mock: a line of text and its translation */
+.tr { width: min(340px, 100%); display: grid; gap: 10px; text-align: left; }
+.tr div { padding: 13px 16px; border-radius: 14px; background: var(--raised); box-shadow: 0 0 0 1px var(--line); font-size: 15px; }
+.tr div small { display: block; color: var(--faint); font-size: 12px; margin-bottom: 3px; }
+.tr div:last-child { animation: drop 5s var(--ease) infinite; }
+.tr span { justify-self: center; display: flex; gap: 4px; }
+.tr kbd { font: 500 12px var(--mono); min-width: 26px; padding: 3px 7px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; color: var(--fg); text-align: center; }
 
 /* Mock: privacy checklist */
 .checks { display: grid; gap: 10px; width: min(300px, 100%); text-align: left; }
@@ -225,7 +243,7 @@ footer a:hover { color: var(--fg); }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .demo .f1 { clip-path: none; }
   .demo .f2 { opacity: 1; }
-  .track { display: none; }
+  .track, .scan .frame::after { display: none; }
   .rise, .js .reveal, .ln { opacity: 1; transform: none; }
 }
 </style>
@@ -293,6 +311,7 @@ footer a:hover { color: var(--fg); }
             <div>Capture area <kbd>⌘⇧X</kbd></div>
             <div>Capture full screen <kbd></kbd></div>
             <div>Capture window <kbd></kbd></div>
+            <div>Copy text from area <kbd>⌘⇧2</kbd></div>
             <hr>
             <div>Settings…</div>
           </div>
@@ -314,6 +333,27 @@ footer a:hover { color: var(--fg); }
         </div>
       </div>
       <div class="card reveal">
+        <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></svg>Text</span>
+        <h3>Copy the text out of anything on screen</h3>
+        <div class="mock">
+          <div class="scan" aria-hidden="true">
+            <div class="frame"><b>Button</b>Triggers an action on the current page, or, with href, navigates.</div>
+            <div class="hint"><kbd>⌘C</kbd> to copy · <kbd>⌘V</kbd> to paste · <kbd>⌘T</kbd> to translate</div>
+          </div>
+        </div>
+      </div>
+      <div class="card reveal" style="--i:1">
+        <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M8.5 4v2M11 6c-.6 3.4-2.8 6-6.5 7.5M6 9.5c1.2 2 2.9 3.3 5 4"/><path d="m12.5 20 3.75-9 3.75 9M13.8 17h4.9"/></svg>Translate</span>
+        <h3>Vietnamese and English, one key apart</h3>
+        <div class="mock">
+          <div class="tr" aria-hidden="true">
+            <div><small>Tiếng Việt</small>Bấm một phím để chụp màn hình</div>
+            <span><kbd class="sym">⌘</kbd><kbd>T</kbd></span>
+            <div><small>English</small>Press one key to capture the screen</div>
+          </div>
+        </div>
+      </div>
+      <div class="card reveal">
         <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9.5 4V3h5v1"/><path d="M12 9v7m-3-3 3 3 3-3"/></svg>Paste</span>
         <h3>Lands in the app you came from</h3>
         <div class="mock">
@@ -325,13 +365,13 @@ footer a:hover { color: var(--fg); }
       </div>
       <div class="card reveal" style="--i:1">
         <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Private</span>
-        <h3>Your screen stays on your machine</h3>
+        <h3>Your screenshots stay on your machine</h3>
         <div class="mock">
           <div class="checks" aria-hidden="true">
             <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>No account</div>
-            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>No upload</div>
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>No image upload</div>
             <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>No tracking</div>
-            <small>The only request is the update check to GitHub.</small>
+            <small>Two requests, ever: the update check to GitHub, and text you choose to translate, sent to Google.</small>
           </div>
         </div>
       </div>
@@ -353,6 +393,7 @@ footer a:hover { color: var(--fg); }
       <details><summary>Is it really free?</summary><p>Yes. ShoreShot is open source under the MIT license. No paid tier, no account.</p></details>
       <details><summary>Why does macOS ask for Screen Recording?</summary><p>Every app that reads the screen needs it. Turn on ShoreShot in System Settings › Privacy &amp; Security › Screen &amp; System Audio Recording, then choose “Quit &amp; Reopen”.</p></details>
       <details><summary>Why does it ask for Accessibility?</summary><p>Only for <kbd>⌘V</kbd>, which pastes into another app for you. Copy, save and drawing work without it.</p></details>
+      <details><summary>Does translating send my screen anywhere?</summary><p>No image ever leaves your computer. When you press <kbd>⌘T</kbd> on text you scanned, that text goes to Google Translate and the translation comes back. Copying text works offline.</p></details>
       <details><summary>macOS says the app “is damaged”</summary><p>The app is not notarized by Apple. The install command avoids this. If you used the .dmg, run this once:</p><pre>xattr -cr /Applications/ShoreShot.app</pre></details>
       <details><summary>Windows shows a SmartScreen warning</summary><p>The installer is not code-signed. Click More info › Run anyway, or use the PowerShell command.</p></details>
       <details><summary>How do I update?</summary><p>Run the install command again. ShoreShot also tells you when a new version is out.</p></details>
