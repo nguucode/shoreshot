@@ -5,7 +5,7 @@ name: tauri-windows
 # Results: job summary + the windows-out artifact. Not part of the release build.
 on:
   push:
-    branches: ['claude/busy-torvalds-3d5f3a']
+    branches: ['claude/tauri-port-windows']
     paths: ['app-tauri/**', '.github/workflows/tauri-windows.yml']
   workflow_dispatch:
 
@@ -23,35 +23,31 @@ jobs:
           node-version: 20
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: app-tauri/ci/wincheck # add app-tauri/src-tauri once the app exists
-      - name: Windows module unit tests
-        working-directory: app-tauri/ci/wincheck
-        run: cargo test
-      # The steps below need the app itself (app-tauri/src-tauri from the macOS port); skipped until it exists.
-      - name: Build app
-        if: hashFiles('app-tauri/src-tauri/Cargo.toml') != ''
+          workspaces: app-tauri/src-tauri
+      - name: Build web assets and icons
         working-directory: app-tauri
         shell: bash
         run: |
           npm install --no-audit --no-fund
-          npm run web --if-present
-          npx tauri icon ../build/icon.png -o src-tauri/icons
-          npx tauri build --bundles nsis
+          npm run web
+      - name: Unit tests
+        working-directory: app-tauri/src-tauri
+        run: cargo test --release
+      - name: Build app (NSIS)
+        working-directory: app-tauri
+        run: npx tauri build --bundles nsis
       - name: Build Electron app (baseline)
-        if: hashFiles('app-tauri/src-tauri/Cargo.toml') != ''
         run: |
           npm install --no-audit --no-fund
           npm run build
       - name: Run harness
-        if: hashFiles('app-tauri/src-tauri/Cargo.toml') != ''
         shell: powershell
         run: |
-          $exe = (Get-ChildItem app-tauri/src-tauri/target/release/*.exe | Select-Object -First 1).FullName
           $installer = (Get-ChildItem app-tauri/src-tauri/target/release/bundle/nsis/*.exe).FullName
-          app-tauri/ci/run-windows.ps1 -Exe $exe -Installer $installer -RepoRoot $PWD `
-            -TauriDataDir (Join-Path $env:APPDATA 'biz.ontheshore.shoreshot')
+          app-tauri/ci/run-windows.ps1 -Exe app-tauri/src-tauri/target/release/shoreshot.exe `
+            -Installer $installer -RepoRoot $PWD -TauriDataDir (Join-Path $env:APPDATA 'ShoreShot')
       - uses: actions/upload-artifact@v4
-        if: always() && hashFiles('app-tauri/src-tauri/Cargo.toml') != ''
+        if: always()
         with:
           name: windows-out
           path: windows-out

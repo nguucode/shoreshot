@@ -1,8 +1,9 @@
 # Porting ShoreShot from Electron to Tauri 2
 
-Status of the port of `src/main.ts` (Electron) to `app-tauri/src-tauri/src/` (Rust). **macOS only so far.**
-The Electron app in `src/` is untouched and stays the shipped app until this reaches parity; nothing here is
-released. Windows comes after macOS, on the WebView2 shared-buffer path proven in `spike/tauri/NOTES.md`.
+Status of the port of `src/main.ts` (Electron) to `app-tauri/src-tauri/src/` (Rust), **macOS and Windows**.
+The Electron app in `src/` is untouched and stays the shipped app until the release switch-over; nothing here
+is released. `main.rs` is shared and calls only `plat::*`: `mac.rs` on macOS, `win.rs` on Windows (same
+functions). Windows-only parts of `main.rs` are `cfg`-gated; see "Windows" below.
 
 The renderer is shared and unchanged: `build-web.sh` compiles `src/renderer/editor.ts` + `settings.ts` and
 copies `static/*.html|css` into `dist/`, loading `web/api.js` (the `window.api` bridge, replacing
@@ -21,13 +22,23 @@ npm run build    # release ShoreShot.app, ad-hoc signed by the linker
 npm run bundle   # release ShoreShot.app signed like Electron's after-pack.js + DMG (see Signing)
 ```
 
+Windows (needs the MSVC build tools; WebView2 ships with Windows 10/11):
+
+```powershell
+cd app-tauri
+npm install
+npm run web
+npx tauri build --bundles nsis   # src-tauri\target\release\shoreshot.exe + bundle\nsis\ShoreShot_*-setup.exe
+```
+
 Run the bundle's binary (`…/ShoreShot.app/Contents/MacOS/shoreshot`) from a terminal that has Screen
 Recording permission, or the dev build will be asked for its own. It reads and writes the same
 `config.json` and `capture.log` as the Electron app, so quit Electron ShoreShot first or the hotkeys clash.
 
 Test switches (env): `SHORESHOT_AUTO=n` runs n captures 3 s apart without a hotkey, each hidden after 1 s;
 `SHORESHOT_AUTO_MODE=area|full|window|settings` (`settings` opens the Settings window instead); `SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|Escape` presses that key in
-the page instead (full mode starts in editing, so `Enter` copies).
+the page instead (full mode starts in editing, so `Enter` copies). Windows only: `SHORESHOT_TEST_MODAL=1`
+opens a MessageBox on the main thread 3 s after start (the CI safety test).
 
 ## Parity, feature by feature
 
@@ -53,8 +64,63 @@ the page instead (full mode starts in editing, so `Enter` copies).
 | `capture.log` | Done | `~/Library/Logs/ShoreShot/capture.log`, `ISO  step ms · step ms`, emptied at startup past 256 KB. Steps differ slightly from Electron's (no `module`/`pixels`; adds `bitmap`). |
 | Single instance / second launch captures | Done, macOS way | Launch Services keeps one instance; opening the app again (`RunEvent::Reopen`) starts an area capture. |
 | desktopCapturer fallback | Dropped | xcap has no separate binary that can be missing. A failed capture shows the error (or the permission flow). |
-| Windows | **Not done** | Next slice: `win.rs` with the same functions, WebView2 shared buffer, PowerShell paste, DPI. |
+| Windows | Done | See "Windows" below. |
 | Release workflow, signing in CI | **Not done (by design)** | `bundle-mac.sh` signs like `after-pack.js`; wiring it into `build.yml` is part of the switch-over. |
+
+## Windows
+
+`win.rs` implements `mac.rs`'s functions on Win32 / WebView2; `main.rs` adds a few `cfg(windows)` lines.
+Tested end to end on the GitHub Actions `windows-latest` runner by `.github/workflows/tauri-windows.yml` +
+`ci/run-windows.ps1`: the real global hotkeys (`keybd_event`) and mouse drags, the Electron app run the same
+way on the same machine as the baseline. The runner is 1024×768 at 100 %, no GPU, Windows Server 2025.
+
+| Feature (src/main.ts) | Windows status | Notes |
+|---|---|---|
+| Tray icon, menu, left click = capture area | Done | `assets/tray.png`; menu on right click (`show_menu_on_left_click(false)`), left click starts an area capture like Electron. |
+| Hotkeys, `config.json` | Done | Same file as Electron: `%APPDATA%\ShoreShot\config.json`. Labels read `Ctrl+Shift+X`. |
+| Settings window | Done (not tested on CI) | Same page; inner size 440×410 (no title-bar offset on Windows). |
+| Capture: xcap, display under the cursor | Done | Physical pixels: monitor, cursor (`GetCursorPos`) and windows are all physical in a per-monitor-DPI-aware process. |
+| Overlay | Done | Always-on-top WebView2 window, shown at −32000 until the page has painted, then moved onto the monitor and focused. WebView2 doesn't render into layered windows, and a hidden one pauses `requestAnimationFrame`, so there is no opacity 0 here. Ctrl+P, F5, Ctrl+wheel / pinch zoom and the context menu are off in the overlay. |
+| Bitmap to the page | Done | WebView2 shared buffer (`CreateSharedBuffer` + `PostSharedBufferToScript`), metadata as additionalData. Tauri IPC is the fallback (`send_ipc`), and the only path on macOS. |
+| DPI, mixed-DPI multi-monitor | Done, **not tested on a real mixed-DPI desktop** | CSS px = physical / that monitor's scale, for the frame, cursor and window list (Electron's `dipToScreenPoint` / `screenToDipRect` once clipped to one display). After moving onto a monitor with another scale, the window's physical size is set again (tao keeps the logical size on WM_DPICHANGED). The first capture after a scale change may show the wrong size for a frame. Unit-tested math only. |
+| Window mode | Done | `xcap::Window::all()` (DWM frame bounds, own windows excluded), minimized windows skipped, clipped and divided by the scale in `clip`. |
+| Copy | Done | `"PNG"` (the page's bytes, not re-encoded) + `CF_DIB`. Windows synthesizes the rest; the formats after a copy match Electron's exactly (see Measurements). |
+| Copy + auto-paste | Done (keystroke not tested on CI) | **In-process `SendInput` Ctrl+V instead of Electron's PowerShell `SendKeys`**: the same keystroke, without starting a ~0.5 s PowerShell process (agreed with the release session). No permission needed. Error box if UIPI blocks it (target app runs as admin). |
+| Save dialog | Done (not tested on CI) | `GetSaveFileNameW` in `%USERPROFILE%\Pictures`, `.png` added; unowned, on a worker thread, counted by the dialog guard. |
+| Message boxes (update, errors) | Done (not tested on CI) | Task Dialog with custom buttons (`TaskDialogIndirect`, looked up at run time; falls back to a MessageBox). Unowned, on a worker thread, counted by the dialog guard. |
+| Open at login | Done (not tested on CI) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `biz.ontheshore.shoreshot` (electron-builder's appId = Electron's AppUserModelId, the name Electron writes). |
+| Update check | Done | Same `curl` (built into Windows 10 1803+), run with `CREATE_NO_WINDOW`; the dialog shows the PowerShell install command. |
+| Single instance / second launch | Done | `tauri-plugin-single-instance`; a second launch starts an area capture (Electron's `second-instance`). |
+| No console window | Done | `windows_subsystem = "windows"` in release builds. |
+| Installer | Done | NSIS, per-user (`tauri.windows.conf.json`, no admin), WebView2 bootstrapper if missing. **1.2 MB.** Unsigned: SmartScreen will warn as it does for Electron's. |
+| Dialog guard / the v1.0.0 freeze | Done | Windows has no app-modal input block, so the freeze can't happen the same way. Tested: with a MessageBox open on the app's main thread (`SHORESHOT_TEST_MODAL=1`), the hotkey still opens the overlay over it, Esc closes the overlay, and the dialog is intact afterwards. The `dialogs` guard still applies to ShoreShot's own dialogs. |
+| Update notification | Not done | Same as macOS: tray item + Settings link only. |
+
+### Windows measurements (runs 42986796697 and 42988224877, same runner for both apps)
+
+| | Electron (from source) | Tauri |
+|---|---|---|
+| Hotkey → overlay visible, run 1 | 57–105 ms (median 77, n=8) | 53–74 ms (median 60, n=8) |
+| Hotkey → overlay visible, run 2 | 45–72 ms (median 58, n=8) | 43–76 ms (median 65, n=8) |
+| Idle RAM, private bytes, process tree | 131–132 MB (4 processes) | **100–102 MB** (7) |
+| After the suite, private | 180–181 MB | **112–113 MB** |
+| Installer | 78–100 MB | **1.2 MB** |
+| Clipboard formats after copy | Bitmap, DeviceIndependentBitmap, Format17, PNG, System.Drawing.Bitmap | same |
+| Hotkey ×6 → overlay, Esc ×6 closes | pass | pass |
+| Select 500×350, draw a rectangle, Enter | pass (500×350 on the clipboard) | pass (500×350) |
+| Window mode: click a 600×400 Notepad, Enter | 584×341 (not investigated) | pass (586×393, the DWM frame) |
+| MessageBox open on the main thread: hotkey, Esc | (not run) | pass: overlay over the dialog, Esc closed it, dialog intact |
+
+Latency is on par with Electron, not clearly better: each app won one run on the median, and the ranges
+overlap. Capture (xcap vs node-screenshots) dominates both. In a Tauri capture.log line, `captured` (xcap) takes 21–39 ms and `posted` (copy into the shared buffer) 20–25 ms
+after it. A 64 KB PNG copy takes 14 ms.
+
+### Not verified on Windows
+
+- Real desktops: 4K, mixed DPI across monitors, a GPU (the runner renders WebView2 in software).
+- Auto-paste into another app, the Save dialog, Task Dialogs, Settings, open at login, the tray click: built
+  and type-checked, not driven by the harness.
+- SmartScreen with the 1.2 MB unsigned installer.
 
 ## Dialogs and the v1.0.0 freeze
 

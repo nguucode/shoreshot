@@ -7,9 +7,17 @@
 //! Test switches: SHORESHOT_AUTO=n runs n captures 3 s apart without the hotkey (each hides after 1 s),
 //! SHORESHOT_AUTO_MODE=area|full|window|settings picks the mode, SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|… presses
 //! that key in the page instead of hiding (full mode starts in editing, so Enter copies).
-// macOS only for now. Windows gets a win.rs with the same functions (spike/tauri: WebView2 shared buffer).
+// Release builds on Windows are GUI apps: no console window next to the tray icon.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// One module per platform with the same functions; main.rs only calls plat::*.
+#[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
 use mac as plat;
+#[cfg(windows)]
+mod win;
+#[cfg(windows)]
+use win as plat;
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -240,8 +248,20 @@ fn set_hotkey(app: &AppHandle, m: usize, accel: &str) -> Result<String, String> 
     Ok(accel.to_string())
 }
 
-/// ⌘⇧X, the way macOS shows shortcuts.
+/// ⌘⇧X on macOS, Ctrl+Shift+X on Windows: the way each OS shows shortcuts.
 fn pretty_hotkey(accel: &str) -> String {
+    if cfg!(windows) {
+        return accel
+            .split('+')
+            .filter(|p| !p.is_empty())
+            .map(|p| match p {
+                "CommandOrControl" | "CmdOrCtrl" | "Control" => "Ctrl",
+                "Command" | "Cmd" | "Super" | "Meta" => "Win",
+                p => p,
+            })
+            .collect::<Vec<_>>()
+            .join("+");
+    }
     accel
         .split('+')
         .filter(|p| !p.is_empty())
@@ -257,10 +277,26 @@ fn pretty_hotkey(accel: &str) -> String {
 
 // ---------- tray ----------
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
     let icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/trayTemplate@2x.png"))?;
+    #[cfg(windows)]
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/tray.png"))?;
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .icon_as_template(true)
+        .icon_as_template(cfg!(target_os = "macos"))
+        // Windows: left click captures right away, the menu is on right click (as in Electron).
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .on_tray_icon_event(|_tray, _ev| {
+            #[cfg(windows)]
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = _ev
+            {
+                start_capture(_tray.app_handle(), 0);
+            }
+        })
         .menu(&tray_menu(app)?)
         .tooltip(tray_tooltip(app))
         .on_menu_event(|app, ev| match ev.id().as_ref() {
@@ -327,7 +363,8 @@ fn open_settings(app: &AppHandle) {
     }
     let built = tauri::WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("ShoreShot Settings")
-        .inner_size(440.0, 442.0) // the page gets 410 like Electron; the title bar takes 32 here
+        // The page gets 410 like Electron; on macOS the title bar takes 32 of the inner size.
+        .inner_size(440.0, if cfg!(windows) { 410.0 } else { 442.0 })
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -446,10 +483,12 @@ fn is_newer(a: &str, b: &str) -> bool {
 
 /// Ask GitHub for the latest release; on a newer one, add a tray item (and a link in Settings).
 fn check_for_update(app: &AppHandle) {
-    let out = std::process::Command::new("curl")
-        .args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json"])
-        .arg("https://api.github.com/repos/nguucode/shoreshot/releases/latest")
-        .output();
+    let mut curl = std::process::Command::new("curl"); // ships with Windows 10 1803+ too
+    curl.args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json"])
+        .arg("https://api.github.com/repos/nguucode/shoreshot/releases/latest");
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut curl, 0x0800_0000); // CREATE_NO_WINDOW
+    let out = curl.output();
     let Ok(out) = out else { return }; // offline: try again on the next check
     let Ok(v) = serde_json::from_slice::<Value>(&out.stdout) else { return };
     let (Some(tag), Some(url)) = (v["tag_name"].as_str(), v["html_url"].as_str()) else { return };
@@ -470,9 +509,13 @@ fn show_update(app: &AppHandle) {
     let Some((version, url)) = st(app).update.lock().unwrap().clone() else { return };
     let a = app.clone();
     std::thread::spawn(move || {
-        let command = "curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash";
+        let (command, shell) = if cfg!(windows) {
+            ("irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex", "PowerShell")
+        } else {
+            ("curl -fsSL https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.sh | bash", "Terminal")
+        };
         let detail = format!(
-            "You have {}. To update, run the install command again in Terminal:\n\n{command}\n\nYour settings and permissions are kept.",
+            "You have {}. To update, run the install command again in {shell}:\n\n{command}\n\nYour settings and permissions are kept.",
             a.package_info().version
         );
         let msg = format!("ShoreShot {version} is available");
@@ -558,23 +601,40 @@ fn capture(app: &AppHandle, m: usize, cx: f64, cy: f64) -> Result<(), String> {
     let (px_w, px_h) = img.dimensions();
     mark(app, &format!("captured {px_w}x{px_h}"));
 
+    // macOS: frame and cursor are points (= CSS px). Windows: physical pixels, CSS px = physical / scale.
+    #[cfg(windows)]
+    let k = plat::scale(&mon);
+    #[cfg(not(windows))]
+    let k = 1.0;
     let s = st(app);
     let c = config(app);
     s.open.store(true, SeqCst);
     s.visible.store(false, SeqCst);
     let generation = s.generation.fetch_add(1, SeqCst) + 1;
     *s.windows_for.lock().unwrap() = (m == 2).then_some(frame);
-    *s.bitmap.lock().unwrap() = img.into_raw();
     plat::show_hidden(app, frame);
     let meta = json!({
         "mode": MODES[m],
-        "cursor": { "x": cx - frame.0, "y": cy - frame.1 },
-        "pxW": px_w, "pxH": px_h, "width": frame.2, "height": frame.3,
+        "cursor": { "x": (cx - frame.0) / k, "y": (cy - frame.1) / k },
+        "pxW": px_w, "pxH": px_h, "width": (frame.2 / k).round(), "height": (frame.3 / k).round(),
         "retina1x": c.retina1x,
         "autoKey": std::env::var("SHORESHOT_AUTO_KEY").ok(),
     });
-    let _ = app.emit_to("overlay", "capture:show", meta);
-    mark(app, "sent");
+    // Windows: Tauri's IPC moves only ~50 MB/s through WebView2 (a 4K frame took ~320 ms), so the bitmap goes
+    // through a WebView2 shared buffer (~20 ms). If that fails it comes back and goes over IPC like on macOS.
+    #[cfg(windows)]
+    {
+        let a = app.clone();
+        plat::post_frame(app, img.into_raw(), meta, move |r| match r {
+            Ok(()) => mark(&a, "posted"),
+            Err((rgba, meta, why)) => {
+                mark(&a, &why);
+                send_ipc(&a, rgba, meta);
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    send_ipc(app, img.into_raw(), meta);
     // Safety valve: if the page never reports ready, hide instead of revealing an unresponsive overlay.
     let a = app.clone();
     std::thread::spawn(move || {
@@ -589,6 +649,13 @@ fn capture(app: &AppHandle, m: usize, cx: f64, cy: f64) -> Result<(), String> {
         });
     });
     Ok(())
+}
+
+/// The page pulls the bitmap with `invoke('bitmap')` after 'capture:show'.
+fn send_ipc(app: &AppHandle, rgba: Vec<u8>, meta: Value) {
+    *st(app).bitmap.lock().unwrap() = rgba;
+    let _ = app.emit_to("overlay", "capture:show", meta);
+    mark(app, "sent");
 }
 
 fn capture_failed(app: &AppHandle, err: String) {
@@ -619,22 +686,29 @@ fn hide(app: &AppHandle) {
 /// covering the whole display (the overlay itself, the desktop), so clicking empty desktop means the whole screen.
 fn list_windows(d: Rect) -> Vec<Value> {
     let Ok(all) = xcap::Window::all() else { return vec![] }; // falls back to area selection
+    // Windows: frames are physical pixels; the page wants CSS px of this display. macOS: already points.
+    #[cfg(windows)]
+    let k = xcap::Monitor::from_point(d.0 as i32, d.1 as i32).map(|m| plat::scale(&m)).unwrap_or(1.0);
+    #[cfg(not(windows))]
+    let k = 1.0;
     all.iter()
+        .filter(|w| !w.is_minimized().unwrap_or(false)) // Windows parks minimized windows at -32000
         .filter_map(|w| {
             let r = (w.x().ok()? as f64, w.y().ok()? as f64, w.width().ok()? as f64, w.height().ok()? as f64);
-            let (x, y, w, h) = clip(r, d)?;
+            let (x, y, w, h) = clip(r, d, k)?;
             Some(json!({ "x": x, "y": y, "w": w, "h": h }))
         })
         .collect()
 }
 
-fn clip((x, y, w, h): Rect, (dx, dy, dw, dh): Rect) -> Option<Rect> {
+/// Clip to the display and convert to CSS px relative to it (`k` = physical px per CSS px; 1 on macOS).
+fn clip((x, y, w, h): Rect, (dx, dy, dw, dh): Rect, k: f64) -> Option<Rect> {
     let (x1, y1) = (x.max(dx), y.max(dy));
     let (x2, y2) = ((x + w).min(dx + dw), (y + h).min(dy + dh));
-    if x2 - x1 < 40.0 || y2 - y1 < 40.0 || (x2 - x1 >= dw && y2 - y1 >= dh) {
+    if (x2 - x1) / k < 40.0 || (y2 - y1) / k < 40.0 || (x2 - x1 >= dw && y2 - y1 >= dh) {
         return None;
     }
-    Some((x1 - dx, y1 - dy, x2 - x1, y2 - y1))
+    Some(((x1 - dx) / k, (y1 - dy) / k, (x2 - x1) / k, (y2 - y1) / k))
 }
 
 // ---------- renderer commands ----------
@@ -707,7 +781,8 @@ fn copy_paste(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
     let _ = app.run_on_main_thread(move || {
         hide(&a);
         plat::clipboard_image(&png);
-        let _ = a.hide(); // give focus back to the previous app
+        #[cfg(target_os = "macos")]
+        let _ = a.hide(); // give focus back to the previous app (Windows: hiding the overlay already does)
         let b = a.clone();
         std::thread::spawn(move || {
             if !plat::accessibility(true) {
@@ -727,7 +802,8 @@ fn copy_paste(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
             }
             std::thread::sleep(Duration::from_millis(250));
             if let Err(e) = plat::paste_keystroke() {
-                error_box(&b, format!("Image copied, but auto-paste failed: {e}. Press ⌘V to paste."));
+                let key = if cfg!(windows) { "Ctrl+V" } else { "⌘V" };
+                error_box(&b, format!("Image copied, but auto-paste failed: {e}. Press {key} to paste."));
             }
         });
     });
@@ -776,9 +852,15 @@ fn log(line: String) {
 
 // ---------- app ----------
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows: a second launch (Start menu, the installer's "Run ShoreShot") captures, like Electron's
+    // second-instance. Registered first so the second process exits before anything else starts.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| start_capture(app, 0)));
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+    builder
         .manage(State::default())
-        .plugin(tauri_nspanel::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, sc, ev| {
@@ -807,6 +889,7 @@ fn main() {
             settings_link
         ])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon
             let handle = app.handle().clone();
             *st(&handle).config.lock().unwrap() = Some(load_config());
@@ -845,9 +928,10 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("tauri build")
-        .run(|app, ev| match ev {
+        .run(|_app, ev| match ev {
             // Opening the app again (Finder, Spotlight, `open`) starts a capture, like Electron's second-instance.
-            RunEvent::Reopen { .. } => start_capture(app, 0),
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => start_capture(_app, 0),
             // Keep running in the background when Settings closes.
             RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
             _ => {}
@@ -864,13 +948,17 @@ mod tests {
         assert_eq!(iso(1_794_412_920, 7), "2026-11-11T16:02:00.007Z");
         assert_eq!(iso(951_782_400, 0), "2000-02-29T00:00:00.000Z");
         assert!(is_newer("0.1.10", "0.1.9") && !is_newer("1.1.0", "1.1.0") && is_newer("2", "1.9.9"));
-        assert_eq!(pretty_hotkey("CommandOrControl+Shift+X"), "⌘⇧X");
+        assert_eq!(pretty_hotkey("CommandOrControl+Shift+X"), if cfg!(windows) { "Ctrl+Shift+X" } else { "⌘⇧X" });
         assert!(parse_accel("Command+Alt+numsub").is_some() && parse_accel("Control+Shift+Up").is_some());
         assert!(parse_accel("Shift+nope").is_none());
         let d = (0.0, 0.0, 1000.0, 800.0);
-        assert_eq!(clip((-10.0, 100.0, 300.0, 200.0), d), Some((0.0, 100.0, 290.0, 200.0)));
-        assert_eq!(clip((0.0, 0.0, 1000.0, 24.0), d), None); // menu bar
-        assert_eq!(clip((0.0, 0.0, 1000.0, 800.0), d), None); // covers the display
+        assert_eq!(clip((-10.0, 100.0, 300.0, 200.0), d, 1.0), Some((0.0, 100.0, 290.0, 200.0)));
+        assert_eq!(clip((0.0, 0.0, 1000.0, 24.0), d, 1.0), None); // menu bar
+        assert_eq!(clip((0.0, 0.0, 1000.0, 800.0), d, 1.0), None); // covers the display
+        // Windows, a 150 % monitor right of a 1920 px one: physical px in, CSS px of that monitor out.
+        let d2 = (1920.0, 0.0, 3840.0, 2160.0);
+        assert_eq!(clip((1000.0, 0.0, 1220.0, 600.0), d2, 1.5), Some((0.0, 0.0, 200.0, 400.0)));
+        assert_eq!(clip((5000.0, 100.0, 50.0, 50.0), d2, 1.5), None); // 33 CSS px: a sliver
         let c = parse_config(&json!({ "hotkey": "Alt+Q", "retina1x": true }));
         assert_eq!((c.hotkeys[0].as_str(), c.hotkeys[1].as_str(), c.retina1x, c.screen_asked), ("Alt+Q", "", true, false));
     }

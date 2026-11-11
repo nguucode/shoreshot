@@ -16,15 +16,32 @@
     document.body.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
   };
 
+  const show = (cb, meta, bitmap) => {
+    cb({ ...meta, bitmap, bgra: false });
+    if (meta.autoKey) setTimeout(() => press(meta.autoKey), 500);
+  };
+
   window.api = {
-    onCapture: (cb) =>
-      listen('capture:show', async ({ payload: meta }) => {
+    onCapture: (cb) => {
+      // Windows: the bitmap arrives as a WebView2 shared buffer (the page maps the app's memory, no IPC copy),
+      // with the metadata as additionalData. putImageData copies it synchronously, so it is released right after.
+      window.chrome?.webview?.addEventListener('sharedbufferreceived', (e) => {
+        const buf = e.getBuffer();
+        transferMs = 0;
+        try {
+          show(cb, e.additionalData, new Uint8Array(buf));
+        } finally {
+          window.chrome.webview.releaseBuffer(buf);
+        }
+      });
+      // macOS, and Windows if the shared buffer failed: pull the raw bytes over IPC.
+      return listen('capture:show', async ({ payload: meta }) => {
         const t = performance.now();
         const bitmap = new Uint8Array(await invoke('bitmap'));
         transferMs = Math.round(performance.now() - t);
-        cb({ ...meta, bitmap, bgra: false });
-        if (meta.autoKey) setTimeout(() => press(meta.autoKey), 500);
-      }),
+        show(cb, meta, bitmap);
+      });
+    },
     onHidden: (cb) => listen('capture:hidden', () => cb()),
     onWindows: (cb) => listen('capture:windows', ({ payload }) => cb(payload)),
     ready: () => invoke('ready', { transferMs }),
