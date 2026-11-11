@@ -195,7 +195,9 @@ $env:SHORESHOT_TEST_MODAL = '1'
 $p = Start-Process $Exe -PassThru
 Remove-Item env:SHORESHOT_TEST_MODAL
 $id = [uint32]$p.Id
-$modal = WaitFor { [K]::FindWindow($null, 'ShoreShot modal test') -ne [IntPtr]::Zero } 10000
+# [NullString]::Value, not $null: PowerShell turns $null into "" for a string parameter, and FindWindow("", …)
+# only matches windows whose class name is empty.
+$modal = WaitFor { [K]::FindWindow([NullString]::Value, 'ShoreShot modal test') -ne [IntPtr]::Zero } 10000
 Key Ctrl, Shift, X
 $shown = WaitFor { [K]::Overlay($id) }
 Start-Sleep -Milliseconds 700
@@ -203,7 +205,7 @@ Shot 'tauri-modal-overlay'
 Key Esc
 $closed = WaitFor { -not [K]::Overlay($id) }
 Start-Sleep -Milliseconds 500
-$intact = [K]::FindWindow($null, 'ShoreShot modal test') -ne [IntPtr]::Zero
+$intact = [K]::FindWindow([NullString]::Value, 'ShoreShot modal test') -ne [IntPtr]::Zero
 Shot 'tauri-modal-after-esc'
 Check 'tauri' 'MessageBox open: overlay shows, Esc closes, dialog intact' ($modal -and $shown -and $closed -and $intact) "dialog $modal, shown $shown, closed $closed, intact $intact"
 & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
