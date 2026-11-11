@@ -140,12 +140,13 @@ section.block { padding: 120px 0 0; }
 .tools { display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 16px; background: rgba(28, 28, 30, .94); box-shadow: 0 24px 50px -20px rgba(0, 0, 0, .5); }
 .tools i { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: #f2f2f7; }
 .tools i svg { width: 18px; height: 18px; }
-.tools i:nth-child(-n+5) { animation: tool 10s ease-in-out infinite; }
+.tools i:nth-child(-n+6) { animation: tool 12s ease-in-out infinite; }
 .tools i:nth-child(2) { animation-delay: 2s; }
 .tools i:nth-child(3) { animation-delay: 4s; }
 .tools i:nth-child(4) { animation-delay: 6s; }
 .tools i:nth-child(5) { animation-delay: 8s; }
-@keyframes tool { 0%, 23%, 100% { background: transparent; } 3%, 20% { background: #3b82f6; } }
+.tools i:nth-child(6) { animation-delay: 10s; }
+@keyframes tool { 0%, 19.17%, 100% { background: transparent; } 2.5%, 16.67% { background: #3b82f6; } }
 .tools b { width: 1px; height: 22px; background: rgba(255, 255, 255, .15); margin: 0 4px; }
 .tools u { width: 18px; height: 18px; border-radius: 50%; background: var(--c); margin: 0 3px; }
 .tools u:first-of-type { box-shadow: 0 0 0 2px rgba(28, 28, 30, .94), 0 0 0 4px #fff; }
@@ -234,7 +235,8 @@ footer a:hover { color: var(--fg); }
   .nav .bar { padding-left: 16px; }
   .card { padding: 28px 24px 0; border-radius: 28px; }
   .card h3 { font-size: 22px; }
-  .tools i { width: 32px; height: 32px; }
+  .tools i { width: 28px; height: 28px; }
+  .tools u { margin: 0 2px; }
   .tools u:nth-of-type(n+4) { display: none; }
   .end { margin: 80px 8px 8px; border-radius: 24px; padding: 80px 20px; }
   .stage { margin-top: 48px; }
@@ -319,12 +321,13 @@ footer a:hover { color: var(--fg); }
       </div>
       <div class="card reveal" style="--i:1">
         <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>Mark up</span>
-        <h3>Five tools and six colours, sized with a scroll</h3>
+        <h3>Six tools and six colours, sized with a scroll</h3>
         <div class="mock">
           <div class="tools" aria-hidden="true">
             <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></i>
             <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></i>
             <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 19 19 5"/></svg></i>
+            <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 18 6M10 6h8v8"/></svg></i>
             <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/></svg></i>
             <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6h12M12 6v13"/></svg></i>
             <b></b>
