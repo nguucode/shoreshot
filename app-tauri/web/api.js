@@ -21,6 +21,60 @@
     if (meta.autoKey) setTimeout(() => press(meta.autoKey), 500);
   };
 
+  // Windows: Windows.Media.Ocr has no Vietnamese recognizer on any machine, so the page reads the text itself
+  // with tesseract.js (dist/tesseract, bundled by build-web.sh, offline). The worker starts with the first scan
+  // and stays. If it fails, the scan falls back to the system's OCR.
+  let reader;
+  let busy = false;
+  const tesseract = () =>
+    (reader ??= (async () => {
+      const base = new URL('tesseract/', location.href).href;
+      await new Promise((ok, no) => {
+        const script = document.createElement('script');
+        script.src = `${base}tesseract.min.js`;
+        script.onload = ok;
+        script.onerror = () => no(new Error('tesseract.js did not load'));
+        document.head.append(script);
+      });
+      return Tesseract.createWorker(['vie', 'eng'], 1, {
+        workerPath: `${base}worker.min.js`,
+        corePath: base,
+        langPath: base,
+        workerBlobURL: false,
+        cacheMethod: 'none',
+      });
+    })().catch((e) => {
+      reader = undefined;
+      throw e;
+    }));
+  const readText = async (png) => {
+    // A scan the page gave up on (Esc, a new selection, its timeout) still occupies the worker: start a new one.
+    if (busy) (await reader?.catch(() => {}))?.terminate();
+    if (busy) reader = undefined;
+    busy = true;
+    const worker = await tesseract();
+    const image = await createImageBitmap(new Blob([png], { type: 'image/png' }));
+    // Screen text is small for Tesseract (it wants capitals around 30 px): enlarge it, up to 2x.
+    // ponytail: fixed scale and size cap; pick the scale from the measured text height if small text misreads.
+    const k = Math.max(1, Math.min(2, 4000 / Math.max(image.width, image.height)));
+    const canvas = new OffscreenCanvas(Math.round(image.width * k), Math.round(image.height * k));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    const { data } = await worker.recognize(await canvas.convertToBlob(), {}, { text: false, blocks: true });
+    busy = false;
+    return (data.blocks ?? [])
+      .flatMap((block) => block.paragraphs)
+      .flatMap((paragraph) => paragraph.lines)
+      .flatMap((line) => line.words)
+      .map(({ text, bbox: b }) => ({ t: text, x: b.x0 / k, y: b.y0 / k, w: (b.x1 - b.x0) / k, h: (b.y1 - b.y0) / k }));
+  };
+  const ocr = navigator.userAgent.includes('Windows')
+    ? (png) =>
+        readText(png).catch((e) => {
+          report(`tesseract: ${e?.message || e}`);
+          return invoke('ocr', png);
+        })
+    : (png) => invoke('ocr', png);
+
   window.api = {
     onCapture: (cb) => {
       // Windows: the bitmap arrives as a WebView2 shared buffer (the page maps the app's memory, no IPC copy),
@@ -49,7 +103,7 @@
     copyPaste: (png) => invoke('copy_paste', png),
     save: (png) => invoke('save', png),
     close: () => invoke('close'),
-    ocr: (png) => invoke('ocr', png),
+    ocr,
     copyText: (text, paste) => invoke('copy_text', { text, paste }),
     translate: (text, to) => invoke('translate', { text, to }),
     settings: {

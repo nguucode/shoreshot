@@ -81,7 +81,9 @@ const colorWrap = $('colorCustomWrap');
 const HINT = hint.textContent!;
 const WINDOW_HINT = 'Click a window · Drag to select an area · Esc to exit';
 const TEXT_HINT = 'Drag over the text to copy · Click for the whole screen · Esc to exit';
-const SCAN_TIMEOUT = 5000; // ms: the overlay never waits longer than this for the OCR
+// ms: the overlay never waits longer than this for the OCR. Windows reads with tesseract.js (app-tauri/web/api.js):
+// about a second for a paragraph, but a whole screen full of text takes far longer than the system's OCR.
+const SCAN_TIMEOUT = navigator.platform.toLowerCase().includes('win') ? 30000 : 5000;
 
 /** Shortcut modifier as shown on this OS: ⌘Z on Mac, Ctrl+Z on Windows. Tooltips and the hint use {mod}. */
 const MOD = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';

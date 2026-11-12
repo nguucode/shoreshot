@@ -2,7 +2,7 @@ name: tauri-windows
 
 # Builds the Tauri app (app-tauri/) on Windows, runs its unit tests, then app-tauri/ci/run-windows.ps1:
 # real hotkeys and mouse input against the app.
-# Results: job summary + the windows-out artifact. Not part of the release build.
+# Results: job summary + the windows-out and windows-installer artifacts. Not part of the release build.
 on:
   push:
     branches: [main]
@@ -47,3 +47,8 @@ jobs:
         with:
           name: windows-out
           path: windows-out
+      - uses: actions/upload-artifact@v4 # the installer of this branch, to try by hand
+        if: always()
+        with:
+          name: windows-installer
+          path: app-tauri/src-tauri/target/release/bundle/nsis/*.exe

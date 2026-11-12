@@ -162,15 +162,17 @@ function Suite($app, $p) {
 
   # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Enter, read the clipboard.
   # "Overview" and "Specs" share a row far apart, so they must come out on separate lines.
-  # Windows.Media.Ocr needs an OCR language; a runner image without one can't read anything, and then the app
-  # must say so, stay closable with Esc and leave the clipboard alone.
+  # The app reads with its own tesseract.js (Windows.Media.Ocr has no Vietnamese), so the Vietnamese text must
+  # come out with its marks, whatever OCR languages the runner has.
   [System.Windows.Forms.Clipboard]::Clear()
   $form = New-Object System.Windows.Forms.Form -Property @{
     FormBorderStyle = 'None'; StartPosition = 'Manual'
     Location = (New-Object System.Drawing.Point(150, 120)); Size = (New-Object System.Drawing.Size(600, 400))
     BackColor = 'White'; TopMost = $true; ShowInTaskbar = $false
   }
-  foreach ($t in @(@('Overview', 30, 60), @('Specs', 360, 60), @('Plain text copied', 30, 200))) {
+  # "Tiếng Việt có dấu", spelled with char codes: Windows PowerShell reads a script without a BOM as ANSI.
+  $vi = "Ti$([char]0x1EBF)ng Vi$([char]0x1EC7)t c$([char]0xF3) d$([char]0x1EA5)u"
+  foreach ($t in @(@('Overview', 30, 60), @('Specs', 360, 60), @($vi, 30, 200))) {
     $form.Controls.Add((New-Object System.Windows.Forms.Label -Property @{
       Text = $t[0]; Location = (New-Object System.Drawing.Point($t[1], $t[2])); AutoSize = $true; ForeColor = 'Black'
       Font = (New-Object System.Drawing.Font('Segoe UI', 28))
@@ -184,18 +186,14 @@ function Suite($app, $p) {
   [K]::Drag(160, 130, 740, 510); Start-Sleep -Milliseconds 300
   Start-Sleep -Milliseconds 1500 # the text is read while the hint is up
   Shot "$app-copy-text"
-  Key Enter; $esc = $false
-  $hidden = WaitFor { -not [K]::Overlay($id) } 3000 # closes 700 ms after copying
-  if (-not $hidden) { Key Esc; $esc = WaitFor { -not [K]::Overlay($id) } }
+  Key Enter
+  $hidden = WaitFor { -not [K]::Overlay($id) } 10000 # the first scan starts the OCR worker; closes 700 ms after copying
+  if (-not $hidden) { Key Esc; WaitFor { -not [K]::Overlay($id) } | Out-Null }
   Start-Sleep -Milliseconds 500
   $form.Close()
   $text = [System.Windows.Forms.Clipboard]::GetText()
   $got = (($text -split "`r?`n") | ForEach-Object { $_.Trim() }) -join ' | '
-  if ($script:ocrLanguages -gt 0) {
-    Check $app 'Copy text reads the selection' ($shown -and $hidden -and $got -eq 'Overview | Specs | Plain text copied') "'$got'"
-  } else {
-    Check $app 'Copy text without an OCR language: Esc closes, clipboard untouched' ($shown -and $esc -and -not $text) "shown $shown, Esc closed $esc, clipboard '$got'"
-  }
+  Check $app 'Copy text reads the selection, Vietnamese included' ($shown -and $hidden -and $got -eq "Overview | Specs | $vi") "'$got'"
 
   $script:after[$app] = Tree-Memory $p.Id
   & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
@@ -215,16 +213,6 @@ function Latency($log) {
   "$($s[0])-$($s[-1]) ms (median $($s[[int][math]::Floor(($s.Count - 1) / 2)]), n=$($s.Count))"
 }
 
-# OCR languages on this machine (0 = Windows.Media.Ocr can't read anything). Server images may ship without
-# one: try to add English, and carry on either way.
-function Ocr-Languages {
-  try { [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]::AvailableRecognizerLanguages.Count } catch { 0 }
-}
-$ocrLanguages = Ocr-Languages
-if ($ocrLanguages -eq 0) {
-  try { Add-WindowsCapability -Online -Name 'Language.OCR~~~en-US~0.0.1.0' | Out-Null } catch { Write-Host "OCR capability: $_" }
-  $ocrLanguages = Ocr-Languages
-}
 
 $mem = @{}; $after = @{}; $formats = @{}
 Remove-Item $TauriLog -ErrorAction SilentlyContinue
@@ -271,7 +259,6 @@ $rows
 | After the suite, private | $($after['tauri'].PrivateMB) MB |
 | Installer | $instMB MB (NSIS) |
 | Clipboard formats after copy | $($formats['tauri']) |
-| OCR languages on the runner | $ocrLanguages |
 
 ### Tauri capture.log
 ``````

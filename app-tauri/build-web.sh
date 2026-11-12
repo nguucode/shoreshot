@@ -16,4 +16,13 @@ for page in editor settings; do
       "../static/$page.html" > "dist/$page.html"
   grep -q 'api.js' "dist/$page.html"
 done
+# Windows reads text with tesseract.js (see web/api.js): the library, its worker, the wasm cores and the
+# Vietnamese and English data. macOS uses Vision, so its bundle leaves them out (TESSERACT=1 forces them in).
+if [ "$(uname)" != Darwin ] || [ -n "$TESSERACT" ]; then
+  mkdir dist/tesseract
+  cp node_modules/tesseract.js/dist/tesseract.min.js node_modules/tesseract.js/dist/worker.min.js \
+    node_modules/tesseract.js-core/tesseract-core*-lstm.wasm.js \
+    node_modules/@tesseract.js-data/vie/4.0.0_best_int/vie.traineddata.gz \
+    node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz dist/tesseract/
+fi
 [ -f src-tauri/icons/icon.icns ] || npx tauri icon ../build/icon.png -o src-tauri/icons > /dev/null
