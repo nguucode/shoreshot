@@ -51,7 +51,8 @@ pub enum Step {
 pub struct Stitcher {
     w: usize,
     rgba: Vec<u8>,
-    anchor: Vec<f32>,
+    /// The last accepted frame, as captured.
+    anchor: Vec<u8>,
     /// The most rows found fixed at the top of the area while it scrolled (a browser's tabs and address bar,
     /// a sticky header). Never written below the top of the result: a spinner in a tab makes a frame's own
     /// count of fixed rows too small.
@@ -62,8 +63,7 @@ pub struct Stitcher {
 
 impl Stitcher {
     pub fn new(w: usize, frame: Vec<u8>) -> Self {
-        let anchor = profiles(w, &frame);
-        Stitcher { w, rgba: frame, anchor, header: 0, why: String::new() }
+        Stitcher { w, anchor: frame.clone(), rgba: frame, header: 0, why: String::new() }
     }
 
     pub fn width(&self) -> usize {
@@ -75,11 +75,18 @@ impl Stitcher {
     }
 
     pub fn push(&mut self, frame: &[u8]) -> Step {
-        let rows = profiles(self.w, frame);
-        let (old, h) = (&self.anchor, rows.len());
-        if h != old.len() {
+        if frame.len() != self.anchor.len() {
             return Step::Same;
         }
+        // Only the columns that changed since the anchor: a window's sidebar or side panel stays put while
+        // the middle scrolls, and counted in, it halved the scroll signal (Windows, a chat app: "too fast"
+        // at a normal speed, and a false match that pasted the sidebar's top mid-image).
+        let cols = moving_columns(self.w, frame, &self.anchor);
+        if cols.len() < 8 {
+            return Step::Same;
+        }
+        let (rows, old_rows) = (profiles(self.w, frame, &cols), profiles(self.w, &self.anchor, &cols));
+        let (old, h) = (&old_rows, rows.len());
         let same = |i: usize, j: usize| (rows[i] - old[j]).abs() < SAME_ROW;
         let top = (0..h).take_while(|&i| same(i, i)).count();
         let bottom = (top..h).rev().take_while(|&i| same(i, i)).count();
@@ -91,7 +98,7 @@ impl Stitcher {
         if few_changed || (top + bottom) * 2 >= h {
             let kept_content = (0..top).chain(h - bottom..h).filter(|&i| busy_old[i]).count() >= 8;
             if !few_changed && kept_content {
-                self.refresh(frame, rows, top);
+                self.refresh(frame, top);
             }
             return Step::Same;
         }
@@ -132,14 +139,16 @@ impl Stitcher {
             );
             return Step::Lost;
         }
-        // Pixel check on the overlap: half the rows close to the anchor's (the result's last h rows). Images
+        // Pixel check on the overlap: half the rows close to the anchor's, in the moving columns. Images
         // that finished loading since the anchor change a third of the rows or more (Instagram: 64-75 % close
         // at shifts that lined up clearly); a different page changes nearly all of them.
         let row = self.w * 4;
-        let anchor_px = &self.rgba[self.rgba.len() - h * row..];
+        let anchor_px = &self.anchor;
         let r = span(d);
         let len = r.len();
-        let close = r.filter(|&i| row_diff(&frame[i * row..(i + 1) * row], &anchor_px[at(i, d) * row..(at(i, d) + 1) * row]) <= CLOSE_ROW).count();
+        let close = r
+            .filter(|&i| row_diff(&frame[i * row..(i + 1) * row], &anchor_px[at(i, d) * row..(at(i, d) + 1) * row], &cols) <= CLOSE_ROW)
+            .count();
         if close * 2 < len {
             self.why = format!("best shift {d} scores {best:.2} but only {close} of {len} rows are close in pixels");
             return Step::Lost;
@@ -148,7 +157,7 @@ impl Stitcher {
             return Step::Same; // above the last match: nothing new yet
         }
         if d == 0 {
-            self.refresh(frame, rows, top); // in place: images loaded since the anchor
+            self.refresh(frame, top); // in place: images loaded since the anchor
             return Step::Same;
         }
         // Scrolled down by d: the result's fixed bottom rows give way to the d new rows and the frame's own
@@ -172,17 +181,17 @@ impl Stitcher {
         self.header = self.header.max(header).max(top);
         self.rgba.truncate(self.rgba.len() - bottom * row);
         self.rgba.extend_from_slice(&frame[(h - bottom - d) * row..]);
-        self.anchor = rows;
+        self.anchor = frame.to_vec();
         Step::Added(d)
     }
 
     /// The frame is where the anchor was: its rows below the fixed header replace the result's last rows (so
     /// images that loaded replace their placeholders), and it becomes the anchor.
-    fn refresh(&mut self, frame: &[u8], rows: Vec<f32>, top: usize) {
+    fn refresh(&mut self, frame: &[u8], top: usize) {
         let tail = frame.len() - top.max(self.header) * self.w * 4;
         let end = self.rgba.len();
         self.rgba[end - tail..].copy_from_slice(&frame[frame.len() - tail..]);
-        self.anchor = rows;
+        self.anchor = frame.to_vec();
     }
 
     /// Nearest-neighbour thumbnail `w` wide (height capped at `max_h`): RGBA, for the live preview.
@@ -221,13 +230,26 @@ pub fn blend(dst: &mut [u8], over: &[u8]) {
     }
 }
 
-/// Mean brightness per row over the left nine tenths.
-fn profiles(w: usize, rgba: &[u8]) -> Vec<f32> {
-    let used = (w - w / 10).max(1);
+/// Columns of the left nine tenths (the right tenth is where scroll bars change) where `a` and `b` differ
+/// clearly in some row (every 4th row looked at).
+fn moving_columns(w: usize, a: &[u8], b: &[u8]) -> Vec<usize> {
+    let row = w * 4;
+    (0..(w - w / 10).max(1))
+        .filter(|&x| {
+            (0..a.len() / row).step_by(4).any(|y| {
+                let i = y * row + x * 4;
+                (0..3).map(|c| u32::from(a[i + c].abs_diff(b[i + c]))).sum::<u32>() > 30
+            })
+        })
+        .collect()
+}
+
+/// Mean brightness per row over `cols`.
+fn profiles(w: usize, rgba: &[u8], cols: &[usize]) -> Vec<f32> {
     rgba.chunks_exact(w * 4)
         .map(|row| {
-            let sum: u32 = row[..used * 4].chunks_exact(4).map(|p| u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])).sum();
-            sum as f32 / (3 * used) as f32
+            let sum: u32 = cols.iter().map(|&x| u32::from(row[x * 4]) + u32::from(row[x * 4 + 1]) + u32::from(row[x * 4 + 2])).sum();
+            sum as f32 / (3 * cols.len()) as f32
         })
         .collect()
 }
@@ -243,11 +265,10 @@ fn busy(p: &[f32]) -> Vec<bool> {
         .collect()
 }
 
-/// Mean absolute difference of two rows over the left nine tenths, every third pixel's channels.
-fn row_diff(a: &[u8], b: &[u8]) -> u32 {
-    let used = (a.len() / 4 - a.len() / 40).max(1) * 4;
-    let (sum, n) = a[..used].chunks_exact(12).zip(b[..used].chunks_exact(12)).fold((0u32, 0u32), |(s, n), (p, q)| {
-        (s + (0..3).map(|c| u32::from(p[c].abs_diff(q[c]))).sum::<u32>(), n + 3)
+/// Mean absolute difference of two rows over every third of `cols`.
+fn row_diff(a: &[u8], b: &[u8], cols: &[usize]) -> u32 {
+    let (sum, n) = cols.iter().step_by(3).fold((0u32, 0u32), |(s, n), &x| {
+        (s + (0..3).map(|c| u32::from(a[x * 4 + c].abs_diff(b[x * 4 + c]))).sum::<u32>(), n + 3)
     });
     sum / n.max(1)
 }
@@ -426,6 +447,29 @@ mod tests {
         (0..90).for_each(|i| want.extend(page_row(i)));
         (0..8).for_each(|_| want.extend(fixed_row(20)));
         assert!(s.rgba() == want, "tabs once at the top, the loaded image in place");
+    }
+
+    #[test]
+    fn fixed_side_columns() {
+        // A window: a sidebar (columns 0..20, its own items down the rows, never moving) and the page
+        // scrolling on its right, with rendering noise. Only the moving columns may decide the shift.
+        let window = |pos: usize, noise: u8| -> Vec<u8> {
+            (0..80)
+                .flat_map(|y| {
+                    let page = page_row(pos + y);
+                    (0..W).flat_map(move |x| {
+                        let v = if x < 20 { (y * 53 % 200) as u8 } else { page[x * 4].saturating_add(((x + y) % 2) as u8 * noise) };
+                        [v, v, v, 255]
+                    })
+                })
+                .collect()
+        };
+        let mut s = Stitcher::new(W, window(0, 0));
+        let step = s.push(&window(9, 1));
+        assert_eq!(step, Step::Added(9), "{}", s.why);
+        let step = s.push(&window(30, 0));
+        assert_eq!(step, Step::Added(21), "{}", s.why);
+        assert_eq!(s.push(&window(30, 1)), Step::Same);
     }
 
     #[test]
