@@ -214,7 +214,8 @@ function Suite($app, $p) {
   $box = New-Object System.Windows.Forms.TextBox -Property @{
     Multiline = $true; ReadOnly = $true; ScrollBars = 'Vertical'; Dock = 'Fill'; BackColor = 'White'
     Font = (New-Object System.Drawing.Font('Consolas', 14))
-    Text = ((1..300 | ForEach-Object { "Line $_ " + ('abcdefghij' * (($_ % 5) + 1)).Substring(0, 8 + ($_ * 7) % 40) }) -join "`r`n")
+    # Lines of different lengths, so each one is distinct ('abcdefghij' * 5 is 50 characters, the most taken).
+    Text = ((1..300 | ForEach-Object { "Line $_ " + ('abcdefghij' * 5).Substring(0, 8 + ($_ * 7) % 40) }) -join "`r`n")
   }
   $list.Controls.Add($box)
   $list.Show(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
