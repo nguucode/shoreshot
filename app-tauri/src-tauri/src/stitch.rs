@@ -253,13 +253,14 @@ fn row_diff(a: &[u8], b: &[u8]) -> u32 {
 }
 
 /// The user's scrolling speed, from the rows each frame added: now (over the last quarter second), peak, and
-/// average while moving. Rows per second; the caller turns them into frame heights per second.
+/// average while scrolling (frames within a quarter second of the last move; longer pauses don't count).
+/// Rows per second; the caller turns them into frame heights per second.
 #[derive(Default)]
 pub struct Speed {
     recent: std::collections::VecDeque<(f64, usize)>, // (time s, rows)
     pub peak: f64,
     total: usize,
-    moving: f64, // seconds spent in frames that added rows
+    moving: f64, // seconds spent scrolling
 }
 
 impl Speed {
@@ -270,12 +271,16 @@ impl Speed {
         if rows > 0 {
             self.recent.push_back((t, rows));
             self.total += rows;
-            self.moving += dt;
         }
         while self.recent.front().is_some_and(|&(at, _)| at <= t - Self::WINDOW) {
             self.recent.pop_front();
         }
         let now = self.recent.iter().map(|r| r.1).sum::<usize>() as f64 / Self::WINDOW;
+        // Every frame while something moved in the last quarter second: a wheel notch that jumps the page
+        // in one frame counts its quarter second, not the 20 ms of that frame (Windows: average 10 > peak 1.5).
+        if now > 0.0 {
+            self.moving += dt;
+        }
         self.peak = self.peak.max(now);
         now
     }
@@ -478,6 +483,12 @@ mod tests {
         // A pause: the speed drops to 0, the peak and average stay.
         assert_eq!(v.add(2.0, 0.02, 0), 0.0);
         assert!((v.peak - 1000.0).abs() < 50.0 && (v.average() - 1000.0).abs() < 1.0);
+        // Wheel notches: the page jumps 100 rows in one frame, 4 times a second.
+        let mut w = Speed::default();
+        for i in 1..=200 {
+            w.add(f64::from(i) * 0.02, 0.02, if i % 12 == 0 { 100 } else { 0 });
+        }
+        assert!(w.average() <= w.peak + 1.0, "average {} > peak {}", w.average(), w.peak);
     }
 
     #[test]

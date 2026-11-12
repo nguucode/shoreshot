@@ -835,7 +835,10 @@ function startScroll(s: Box): void {
   ed.phase = 'scrolling';
   ed.thumbAt = ed.thumbFor = 0;
   hint.classList.add('hidden');
-  document.documentElement.classList.add('live'); // the frozen screenshot goes: the real screen shows through
+  document.documentElement.classList.add('live');
+  // macOS: the frozen screenshot goes, the real screen shows through the transparent window. Windows: main
+  // cuts a hole in the opaque overlay over the area, and the dimmed screenshot stays around it.
+  if (!navigator.platform.toLowerCase().includes('win')) document.documentElement.classList.add('see-through');
   selEl.dataset.state = 'waiting';
   layout();
   setGuide(2, 'Scroll down slowly', [
@@ -933,7 +936,7 @@ async function onScrollDone(d: ShoreShotScrollDone): Promise<void> {
   if (ed.phase !== 'scrolling') return;
   const img = await window.api.scroll.preview(d.width, d.height); // the whole image, full size
   if (!img || ed.phase !== 'scrolling') return;
-  document.documentElement.classList.remove('live');
+  document.documentElement.classList.remove('live', 'see-through');
   document.documentElement.classList.add('long');
   guide.classList.add('hidden');
   ed.barSize = ed.hintSize = null; // bigger on the tall page: measure again
@@ -1280,7 +1283,7 @@ function reset(): void {
   hud.classList.add('hidden');
   hint.classList.remove('hidden');
   guide.classList.add('hidden');
-  document.documentElement.classList.remove('live', 'long');
+  document.documentElement.classList.remove('live', 'see-through', 'long');
   ed.long = null;
   ed.barSize = ed.hintSize = null; // back to the normal size
   reviewNote.classList.add('hidden');
