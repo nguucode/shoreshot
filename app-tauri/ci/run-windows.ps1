@@ -38,6 +38,11 @@ public static class K {
     for (int i = 1; i <= 20; i++) { SetCursorPos(x1 + (x2 - x1) * i / 20, y1 + (y2 - y1) * i / 20); System.Threading.Thread.Sleep(15); }
     mouse_event(4, 0, 0, 0, UIntPtr.Zero);
   }
+  // Mouse wheel at (x, y): notches > 0 scroll down (120 units each, negative wheel data).
+  public static void Wheel(int x, int y, int notches) {
+    SetCursorPos(x, y); System.Threading.Thread.Sleep(30);
+    mouse_event(0x0800, 0, 0, unchecked((uint)(-120 * notches)), UIntPtr.Zero);
+  }
   public static void Click(int x, int y) {
     SetCursorPos(x, y); System.Threading.Thread.Sleep(50);
     mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
@@ -62,7 +67,7 @@ public static class K {
   }
 }
 "@
-$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; C = 0x43; Two = 0x32; Esc = 0x1B }
+$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; C = 0x43; S = 0x53; Two = 0x32; Enter = 0x0D; Esc = 0x1B }
 function Key([string[]]$names) { [K]::Chord([byte[]]($names | ForEach-Object { $VK[$_] })) }
 function Shot($name) { [K]::Shot((Join-Path $Out "$name.png")) }
 function WaitFor([scriptblock]$cond, $ms = 3000) {
@@ -92,10 +97,11 @@ function Clipboard-Image {
   [pscustomobject]@{ Size = if ($img) { "$($img.Width)x$($img.Height)" } else { 'none' }; W = $img.Width; H = $img.Height; Formats = $formats }
 }
 
-# Hotkeys in config.json: area Ctrl+Shift+X (default), window Ctrl+Shift+W, copy text Ctrl+Shift+2 (default).
+# Hotkeys in config.json: area Ctrl+Shift+X (default), window Ctrl+Shift+W, copy text Ctrl+Shift+2 (default),
+# scrolling capture Ctrl+Shift+S.
 function Write-Config($dir) {
   New-Item -ItemType Directory -Force $dir | Out-Null
-  '{"hotkeys":{"area":"CommandOrControl+Shift+X","full":"","window":"CommandOrControl+Shift+W","text":"CommandOrControl+Shift+2"},"retina1x":false,"screenAsked":true}' |
+  '{"hotkeys":{"area":"CommandOrControl+Shift+X","full":"","window":"CommandOrControl+Shift+W","text":"CommandOrControl+Shift+2","scroll":"CommandOrControl+Shift+S"},"retina1x":false,"screenAsked":true}' |
     Set-Content (Join-Path $dir 'config.json') -Encoding ascii
 }
 
@@ -195,6 +201,44 @@ function Suite($app, $p) {
   $text = [System.Windows.Forms.Clipboard]::GetText()
   $got = (($text -split "`r?`n") | ForEach-Object { $_.Trim() }) -join ' | '
   Check $app 'Copy text reads the selection, Vietnamese included' ($shown -and $hidden -and $got -eq "Overview | $vi1 | $vi2") "'$got'"
+
+  # 5. Scrolling capture: a window with a long list of distinct lines at a known rect. Select inside it, click
+  # through the hole in the overlay, scroll it with the wheel, Enter (finish), Ctrl+C on the result. The
+  # stitched image must be much taller than the selection.
+  [System.Windows.Forms.Clipboard]::Clear()
+  $list = New-Object System.Windows.Forms.Form -Property @{
+    FormBorderStyle = 'None'; StartPosition = 'Manual'
+    Location = (New-Object System.Drawing.Point(150, 120)); Size = (New-Object System.Drawing.Size(600, 400))
+    TopMost = $true; ShowInTaskbar = $false
+  }
+  $box = New-Object System.Windows.Forms.TextBox -Property @{
+    Multiline = $true; ReadOnly = $true; ScrollBars = 'Vertical'; Dock = 'Fill'; BackColor = 'White'
+    Font = (New-Object System.Drawing.Font('Consolas', 14))
+    Text = ((1..300 | ForEach-Object { "Line $_ " + ('abcdefghij' * (($_ % 5) + 1)).Substring(0, 8 + ($_ * 7) % 40) }) -join "`r`n")
+  }
+  $list.Controls.Add($box)
+  $list.Show(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+  $box.SelectionStart = 0; $box.ScrollToCaret()
+  Start-Sleep -Milliseconds 500
+  Key Ctrl, Shift, S
+  $shown = WaitFor { [K]::Overlay($id) }
+  Start-Sleep -Milliseconds 700
+  [K]::Drag(170, 140, 700, 500); Start-Sleep -Milliseconds 800 # the first frame is grabbed 200 ms in
+  [K]::Click(430, 320); Start-Sleep -Milliseconds 300 # goes through the hole: the text box takes the wheel
+  Shot "$app-scroll-live"
+  for ($i = 0; $i -lt 8; $i++) { [K]::Wheel(430, 320, 2); Start-Sleep -Milliseconds 250; [System.Windows.Forms.Application]::DoEvents() }
+  Start-Sleep -Milliseconds 500
+  Key Enter # finish (a global shortcut while scrolling)
+  Start-Sleep -Milliseconds 2000 # the result opens in the editor
+  Shot "$app-scroll-result"
+  Key Ctrl, C
+  $hidden = WaitFor { -not [K]::Overlay($id) } 10000
+  if (-not $hidden) { Key Esc; WaitFor { -not [K]::Overlay($id) } | Out-Null }
+  Start-Sleep -Milliseconds 500
+  $list.Close()
+  $clip = Clipboard-Image
+  $line = Get-Content $TauriLog -ErrorAction SilentlyContinue | Where-Object { $_ -match 'scroll: ' } | Select-Object -Last 1
+  Check $app 'Scrolling capture stitches a tall image and copies it' ($shown -and $hidden -and $clip.W -ge 500 -and $clip.H -ge 720) "$($clip.Size); $line"
 
   $script:after[$app] = Tree-Memory $p.Id
   & taskkill /PID $p.Id /T /F 2>&1 | Out-Null

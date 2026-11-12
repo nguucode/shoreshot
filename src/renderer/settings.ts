@@ -5,8 +5,6 @@
   const msg = el<HTMLParagraphElement>('msg');
   const isMac = navigator.platform.toLowerCase().includes('mac');
   const MODES: ShoreShotMode[] = ['area', 'full', 'window', 'text', 'scroll'];
-  // Scrolling capture is macOS only for now (the row stays in the page, hidden, so the code can treat all modes alike).
-  if (!isMac) el('rowScroll').style.display = 'none';
   const fields = Object.fromEntries(
     MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`)!]),
   ) as Record<ShoreShotMode, HTMLButtonElement>;

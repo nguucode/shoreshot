@@ -136,6 +136,16 @@ pub fn hide_overlay(app: &AppHandle) {
     }
 }
 
+/// Scrolling capture: the overlay lets the mouse through to the app below (`area` set) and keeps itself out
+/// of the grabs; the page shows the real screen through a transparent window. None restores it.
+pub fn scroll_passthrough(app: &AppHandle, area: Option<(u32, u32, u32, u32)>) {
+    if let Some(win) = app.get_webview_window("overlay") {
+        let _ = win.set_ignore_cursor_events(area.is_some());
+        // The frame and the guide sit outside the area; this keeps the overlay out of the grabs regardless.
+        let _ = win.set_content_protected(area.is_some());
+    }
+}
+
 // ---------- clipboard ----------
 /// PNG plus TIFF (what Electron's clipboard.writeImage gives older apps). Main thread.
 /// PNG only past 8 MB: TIFF is uncompressed (a 3,876 × 14,432 scrolling capture makes 220 MB of it), and

@@ -187,14 +187,42 @@ fn release_frame() {
     }
 }
 
+/// Scrolling capture: a hole in the overlay over `area` (physical px, from the overlay's top-left), so the
+/// app below shows through it and takes the mouse there, while the frame and the guide stay drawn around
+/// it (WebView2 can't paint a see-through window, which is how macOS does it). None closes the hole.
+pub fn scroll_passthrough(app: &AppHandle, area: Option<(u32, u32, u32, u32)>) {
+    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_DIFF};
+    let Some(win) = app.get_webview_window("overlay") else { return };
+    let Ok(hwnd) = win.hwnd() else { return };
+    let (_, _, w, h) = *FRAME.lock().unwrap();
+    unsafe {
+        let rgn = match area {
+            None => std::ptr::null_mut(),
+            Some((x, y, aw, ah)) => {
+                let all = CreateRectRgn(0, 0, w as i32, h as i32);
+                let hole = CreateRectRgn(x as i32, y as i32, (x + aw) as i32, (y + ah) as i32);
+                CombineRgn(all, all, hole, RGN_DIFF);
+                DeleteObject(hole);
+                all
+            }
+        };
+        SetWindowRgn(hwnd.0 as _, rgn, 1); // the window owns the region from here
+    }
+}
+
 // ---------- clipboard ----------
 /// "PNG" (the bytes as they are, no re-encode) plus CF_DIB for apps that only take bitmaps; Windows
-/// synthesizes CF_BITMAP and CF_DIBV5 from it. Main thread.
+/// synthesizes CF_BITMAP and CF_DIBV5 from it. PNG only past 8 MB: the DIB is uncompressed (a tall
+/// scrolling capture makes hundreds of MB of it) and building it stalls the main thread. Main thread.
 pub fn clipboard_image(png: &[u8]) {
+    let png_format = unsafe { RegisterClipboardFormatW(wide("PNG").as_ptr()) };
+    if png.len() > 8 * 1024 * 1024 {
+        set_clipboard(&[(png_format, png)]);
+        return;
+    }
     let Ok(img) = image::load_from_memory_with_format(png, image::ImageFormat::Png) else { return };
     let img = img.to_rgba8();
     let dib = dib_from_rgba(img.width(), img.height(), img.as_raw());
-    let png_format = unsafe { RegisterClipboardFormatW(wide("PNG").as_ptr()) };
     set_clipboard(&[(png_format, png), (CF_DIB, &dib)]);
 }
 

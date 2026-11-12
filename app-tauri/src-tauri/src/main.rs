@@ -39,7 +39,7 @@ const WATCHDOG: Duration = Duration::from_millis(1500);
 
 /// Modes, indexed 0..N everywhere (config, hotkeys, tray). "text" selects an area like "area", then copies
 /// the text in it (OCR) instead of opening the editor. "scroll" selects an area, then the user scrolls it and
-/// the frames are stitched into one tall image (scrolling capture, macOS only for now).
+/// the frames are stitched into one tall image (scrolling capture).
 const N: usize = 5;
 const SCROLL: usize = 4;
 const MODES: [&str; N] = ["area", "full", "window", "text", "scroll"];
@@ -356,9 +356,6 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let act = active(app);
     let menu = Menu::new(app)?;
     for m in 0..N {
-        if m == SCROLL && cfg!(windows) {
-            continue;
-        }
         let key = if act[m] { format!("    {}", pretty_hotkey(&c.hotkeys[m])) } else { String::new() };
         menu.append(&MenuItem::with_id(app, MODES[m], format!("{}{key}", MODE_LABEL[m]), true, None::<&str>)?)?;
     }
@@ -397,8 +394,8 @@ fn open_settings(app: &AppHandle) {
     }
     let built = tauri::WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("ShoreShot Settings")
-        // The page gets 452, plus 42 on macOS for the scrolling capture row; the title bar takes 32 there.
-        .inner_size(440.0, if cfg!(windows) { 452.0 } else { 526.0 })
+        // The page gets 494; on macOS the title bar takes 32 of the inner size.
+        .inner_size(440.0, if cfg!(windows) { 494.0 } else { 526.0 })
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -607,11 +604,6 @@ fn start_capture(app: &AppHandle, m: usize) {
     let s = st(app);
     if s.dialogs.load(SeqCst) > 0 {
         return log_line(&format!("{} ignored: a dialog is open", MODES[m]));
-    }
-    // shortcut: the Windows overlay is an opaque WebView2 window, so the screen can't show through it while
-    // scrolling; a small guide window beside the area would do it there.
-    if m == SCROLL && cfg!(windows) {
-        return error_box(app, "Scrolling capture is only on macOS for now.".into());
     }
     if s.open.load(SeqCst) {
         if s.visible.load(SeqCst) {
@@ -995,11 +987,7 @@ fn scroll_start(app: AppHandle, x: f64, y: f64, w: f64, h: f64) {
     let area = (px(x), px(y), px(w).max(16), px(h).max(16));
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(win) = a.get_webview_window("overlay") {
-            let _ = win.set_ignore_cursor_events(true);
-            // The frame and guide sit outside the area; this keeps the overlay out of the grabs regardless.
-            let _ = win.set_content_protected(true);
-        }
+        plat::scroll_passthrough(&a, Some(area));
         take_scroll_keys(&a, &[("Enter", "stop"), ("Escape", "cancel")]);
     });
     std::thread::spawn(move || scroll_loop(&app, frame, area, generation));
@@ -1044,10 +1032,7 @@ fn end_scroll(app: &AppHandle) {
     for (sc, _) in std::mem::take(&mut *s.scroll_keys.lock().unwrap()) {
         let _ = app.global_shortcut().unregister(sc);
     }
-    if let Some(win) = app.get_webview_window("overlay") {
-        let _ = win.set_ignore_cursor_events(false);
-        let _ = win.set_content_protected(false);
-    }
+    plat::scroll_passthrough(app, None);
 }
 
 fn scroll_loop(app: &AppHandle, frame: Rect, (x, y, w, h): (u32, u32, u32, u32), generation: usize) {

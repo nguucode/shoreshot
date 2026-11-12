@@ -212,8 +212,12 @@ html, body {
 
 /* ---------- scrolling capture ---------- */
 /* While scrolling, the real screen shows through: no frozen screenshot, no black page behind it. */
-html.live, html.live body { background: transparent; cursor: default; }
-html.live #bg, html.live .badge { visibility: hidden; }
+/* macOS: the window is transparent, so the real screen shows through everywhere. Windows: the overlay is
+   opaque (WebView2) with a hole over the area (main cuts it); the frozen screenshot stays around it, dimmed. */
+html.see-through, html.see-through body { background: transparent; }
+html.see-through #bg { visibility: hidden; }
+html.live { cursor: default; }
+html.live .badge { visibility: hidden; }
 /* Frame drawn outside the area (the area itself must stay untouched: it is being grabbed), colored by status. */
 html.live .sel { --c: #3b82f6; box-shadow: 0 0 0 3px var(--c), 0 0 0 100vmax rgba(0, 0, 0, 0.35); transition: box-shadow 0.15s; }
 html.live .sel i { display: none; }
