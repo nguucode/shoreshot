@@ -138,9 +138,12 @@ pub fn hide_overlay(app: &AppHandle) {
 
 // ---------- clipboard ----------
 /// PNG plus TIFF (what Electron's clipboard.writeImage gives older apps). Main thread.
+/// PNG only past 8 MB: TIFF is uncompressed (a 3,876 × 14,432 scrolling capture makes 220 MB of it), and
+/// building it here held the main thread for half a second and made the whole Mac stutter.
 pub fn clipboard_image(png: &[u8]) {
     let data = NSData::with_bytes(png);
-    let tiff = NSImage::initWithData(NSImage::alloc(), &data).and_then(|i| i.TIFFRepresentation());
+    let small = png.len() <= 8 * 1024 * 1024;
+    let tiff = small.then(|| NSImage::initWithData(NSImage::alloc(), &data).and_then(|i| i.TIFFRepresentation())).flatten();
     unsafe {
         let pb = NSPasteboard::generalPasteboard();
         pb.clearContents();

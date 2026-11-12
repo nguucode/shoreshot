@@ -62,7 +62,7 @@ public static class K {
   }
 }
 "@
-$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; Two = 0x32; Enter = 0x0D; Esc = 0x1B }
+$VK = @{ Ctrl = 0x11; Shift = 0x10; X = 0x58; W = 0x57; R = 0x52; C = 0x43; Two = 0x32; Esc = 0x1B }
 function Key([string[]]$names) { [K]::Chord([byte[]]($names | ForEach-Object { $VK[$_] })) }
 function Shot($name) { [K]::Shot((Join-Path $Out "$name.png")) }
 function WaitFor([scriptblock]$cond, $ms = 3000) {
@@ -125,7 +125,7 @@ function Suite($app, $p) {
   Check $app 'Hotkey shows the overlay (6x)' ($shown -eq 6) "$shown/6"
   Check $app 'Esc closes it (6x)' ($closed -eq 6) "$closed/6"
 
-  # 2. Select an area, draw a rectangle, Enter = copy. 500x350 at 100 %.
+  # 2. Select an area, draw a rectangle, Ctrl+C = copy. 500x350 at 100 %.
   [System.Windows.Forms.Clipboard]::Clear()
   Key Ctrl, Shift, X
   $null = WaitFor { [K]::Overlay($id) }
@@ -133,14 +133,14 @@ function Suite($app, $p) {
   [K]::Drag(200, 150, 700, 500); Start-Sleep -Milliseconds 300
   Key R; [K]::Drag(300, 250, 500, 400); Start-Sleep -Milliseconds 300
   Shot "$app-draw"
-  Key Enter
+  Key Ctrl, C
   $hidden = WaitFor { -not [K]::Overlay($id) }
   Start-Sleep -Milliseconds 500
   $clip = Clipboard-Image
-  Check $app 'Draw + Enter copies the selection' ($hidden -and $clip.W -eq 500 -and $clip.H -eq 350) $clip.Size
+  Check $app 'Draw + Ctrl+C copies the selection' ($hidden -and $clip.W -eq 500 -and $clip.H -eq 350) $clip.Size
   $script:formats[$app] = $clip.Formats
 
-  # 3. Window mode: frame a Notepad window placed at a known rect, click it, Enter.
+  # 3. Window mode: frame a Notepad window placed at a known rect, click it, Ctrl+C.
   [System.Windows.Forms.Clipboard]::Clear()
   $np = Start-Process notepad -PassThru
   $null = WaitFor { $np.Refresh(); $np.MainWindowHandle -ne 0 } 5000
@@ -152,7 +152,7 @@ function Suite($app, $p) {
   Start-Sleep -Milliseconds 1000 # the window list arrives after the overlay is visible
   Shot "$app-window-mode"
   [K]::Click(450, 320); Start-Sleep -Milliseconds 300
-  Key Enter
+  Key Ctrl, C
   $null = WaitFor { -not [K]::Overlay($id) }
   Start-Sleep -Milliseconds 500
   $clip = Clipboard-Image
@@ -160,7 +160,7 @@ function Suite($app, $p) {
   # The DWM frame of a 600x400 window is a few px smaller than its GetWindowRect (no invisible border).
   Check $app 'Window mode copies the clicked window' ($clip.W -ge 570 -and $clip.W -le 600 -and $clip.H -ge 370 -and $clip.H -le 400) $clip.Size
 
-  # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Enter, read the clipboard.
+  # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Ctrl+C, read the clipboard.
   # "Overview" and "Tiếng Việt" share a row far apart, so they must come out on separate lines.
   # The app reads with its own tesseract.js (Windows.Media.Ocr has no Vietnamese), so the Vietnamese text must
   # come out with its marks, whatever OCR languages the runner has.
@@ -187,7 +187,7 @@ function Suite($app, $p) {
   [K]::Drag(160, 130, 740, 510); Start-Sleep -Milliseconds 300
   Start-Sleep -Milliseconds 1500 # the text is read while the hint is up
   Shot "$app-copy-text"
-  Key Enter
+  Key Ctrl, C
   $hidden = WaitFor { -not [K]::Overlay($id) } 10000 # the first scan starts the OCR worker; closes 700 ms after copying
   if (-not $hidden) { Key Esc; WaitFor { -not [K]::Overlay($id) } | Out-Null }
   Start-Sleep -Milliseconds 500

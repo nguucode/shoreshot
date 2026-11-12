@@ -9,7 +9,7 @@
   addEventListener('unhandledrejection', (e) => report(String(e.reason?.stack || e.reason)));
 
   let transferMs = 0;
-  // SHORESHOT_AUTO_KEY (test runs): press a key once the capture is showing, e.g. "Enter" or "Meta+s".
+  // SHORESHOT_AUTO_KEY (test runs): press a key once the capture is showing, e.g. "Meta+c" or "Meta+s".
   const press = (spec) => {
     const key = spec.replace('Meta+', '');
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey: spec !== key, bubbles: true }));
@@ -126,6 +126,26 @@
     ocr,
     copyText: (text, paste) => invoke('copy_text', { text, paste }),
     translate: (text, to) => invoke('translate', { text, to }),
+    scroll: {
+      start: (b) => invoke('scroll_start', { x: b.x, y: b.y, w: b.w, h: b.h }),
+      stop: () => invoke('scroll_stop'),
+      preview: async (w, maxH) => {
+        const buf = new Uint8Array(await invoke('scroll_preview', { w, maxH }));
+        if (buf.length < 8) return null;
+        const head = new DataView(buf.buffer, buf.byteOffset, 8);
+        return { w: head.getUint32(0, true), h: head.getUint32(4, true), rgba: new Uint8ClampedArray(buf.buffer, buf.byteOffset + 8, buf.length - 8) };
+      },
+      onStatus: (cb) => listen('scroll:status', ({ payload }) => cb(payload)),
+      onDone: (cb) => listen('scroll:done', ({ payload }) => cb(payload)),
+      onKey: (cb) => listen('scroll:key', ({ payload }) => cb(payload)),
+      overlay: (y, rgba) => {
+        const body = new Uint8Array(4 + rgba.length);
+        new DataView(body.buffer).setUint32(0, y, true);
+        body.set(rgba, 4);
+        return invoke('scroll_overlay', body);
+      },
+      finish: (action, c) => invoke('scroll_finish', { action, x: c.x, y: c.y, w: c.w, h: c.h }),
+    },
     settings: {
       get: () => invoke('settings_get'),
       setHotkey: (mode, accel) => invoke('settings_set_hotkey', { mode, accel }),

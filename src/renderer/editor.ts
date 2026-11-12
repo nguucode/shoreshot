@@ -26,8 +26,14 @@ const LINE_HEIGHT = 1.2;
 const TEXT_PAD = 8; // frame around the text being typed: drag it to move the text
 
 const ed = {
-  // text: copy-text mode with a selection, waiting for ⌘C / ⌘V
-  phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'text' | 'exporting',
+  // text: copy-text mode with a selection, waiting for ⌘C / ⌘V. scrolling: scrolling capture, the user is
+  // scrolling the real screen inside the frame; its result then opens in editing, on a page that scrolls.
+  phase: 'loading' as 'loading' | 'selecting' | 'editing' | 'text' | 'scrolling' | 'exporting',
+  // Scrolling capture's result: the page scrolls and #bg holds the tall image at this page position (CSS px).
+  // Otherwise the page is the screen and #bg covers it from (0, 0).
+  long: null as Pt | null,
+  longPx: { w: 0, h: 0 }, // its size in image pixels
+  longK: 1, // its image pixels per CSS px: the screen's, or more when it is shrunk to fit the window's width
   mode: 'area' as ShoreShotMode,
   scan: null as Promise<string> | null, // copy-text mode: the text being read from the selection
   viewW: 0,
@@ -56,6 +62,8 @@ const ed = {
   textMove: null as Pt | null, // dragging the text box by its frame: offset from its top-left
   windows: [] as Box[], // window capture: window frames, front to back (empty otherwise)
   mouse: { x: 0, y: 0 } as Pt,
+  thumbAt: 0, // scrolling capture: when the live thumbnail was last fetched (ms), or -1 while fetching
+  thumbFor: 0, // the stitched height it shows
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -73,6 +81,7 @@ const translateHint = $<HTMLSpanElement>('translateHint');
 const sizeBadge = $<HTMLDivElement>('sizeBadge');
 const hud = $<HTMLDivElement>('hud');
 const hint = $<HTMLDivElement>('hint');
+const reviewNote = $<HTMLDivElement>('reviewNote');
 const textInput = $<HTMLTextAreaElement>('textInput');
 const colorInput = $<HTMLInputElement>('colorCustom');
 const sizeReadout = $<HTMLSpanElement>('sizeReadout');
@@ -109,7 +118,7 @@ const clampToSel = (p: Pt): Pt => {
 const font = (size: number) => `600 ${size}px ${FONT_STACK}`;
 const activeSizeTool = (): Tool => (ed.textEdit ? 'text' : ed.tool);
 /** Exported pixels per CSS px: native, or 1 when "Export at 1x on Retina" is on. */
-const outScale = () => (ed.retina1x ? 1 : ed.k);
+const outScale = () => (ed.long ? ed.longK : ed.retina1x ? 1 : ed.k); // the tall page exports at full size
 
 const GRIP = 6; // px around the selection edges/corners that grab a resize
 /** Which edge/corner of the selection point p is on (null if none). */
@@ -266,7 +275,8 @@ function positionToolbar(): void {
     if (x + tw > ed.viewW - 4) x = s.x - tw - gap;
     if (x < 4) x = s.x + s.w - tw - gap;
     x = clamp(x, 4, ed.viewW - tw - 4);
-    const y = clamp(s.y + s.h - th, 4, ed.viewH - th - 4);
+    // The tall page: bars stay at the bottom of the window as it scrolls (they are fixed).
+    const y = ed.long ? ed.viewH - th - 16 : clamp(s.y + s.h - th, 4, ed.viewH - th - 4);
     actionsEl.style.transform = `translate(${x}px, ${y}px)`;
     actionsEl.classList.toggle('tips-left', x + tw + 240 > ed.viewW);
   }
@@ -276,6 +286,7 @@ function positionToolbar(): void {
   if (hy + hh > ed.viewH - 4) hy = s.y + s.h - hh - gap;
   let hx = s.x + s.w - hw;
   if (hy < s.y + s.h && x < s.x + s.w) hx = x - hw - gap; // both inside the frame: hint left of the bars
+  if (ed.long) [hx, hy] = [x - hw - gap, ed.viewH - hh - 16]; // the tall page: beside the bars, fixed
   hx = clamp(hx, 4, ed.viewW - hw - 4);
   pasteHint.style.transform = `translate(${hx}px, ${hy}px)`;
 }
@@ -283,6 +294,7 @@ function positionToolbar(): void {
 /** Fit #stage and #draft to the selection (called on entering editing). Drawing coordinates stay in screen CSS px. */
 function setupLayers(): void {
   const s = norm(ed.selection!);
+  if (ed.long) return setupViewLayers();
   for (const [cv, c] of [[stage, ctx], [draftCv, draftCtx]] as const) {
     cv.width = Math.max(1, Math.round(s.w * ed.k));
     cv.height = Math.max(1, Math.round(s.h * ed.k));
@@ -291,6 +303,43 @@ function setupLayers(): void {
     c.setTransform(ed.k, 0, 0, ed.k, -s.x * ed.k, -s.y * ed.k);
   }
 }
+
+// The tall page: the shape layers are the size of the window, fixed, and follow the scroll (only shapes in
+// view are drawn), so drawing and moving the mouse cost the same on a 30,000 px image as on one screen.
+function setupViewLayers(): void {
+  for (const [cv, c] of [[stage, ctx], [draftCv, draftCtx]] as const) {
+    cv.width = Math.round(ed.viewW * ed.k);
+    cv.height = Math.round(ed.viewH * ed.k);
+    place(cv, { x: 0, y: 0, w: ed.viewW, h: ed.viewH });
+    cv.classList.remove('hidden');
+    fitView(c);
+  }
+}
+
+/** Page coordinates -> this window's pixels at the current scroll, clipped to the selection. */
+function fitView(c: CanvasRenderingContext2D): void {
+  const s = norm(ed.selection!);
+  c.restore(); // the previous view (a no-op the first time)
+  c.save();
+  c.setTransform(ed.k, 0, 0, ed.k, -window.scrollX * ed.k, -window.scrollY * ed.k);
+  c.beginPath();
+  c.rect(s.x, s.y, s.w, s.h);
+  c.clip();
+}
+
+let viewQueued = false;
+window.addEventListener('scroll', () => {
+  if (!ed.long || ed.phase !== 'editing' || viewQueued) return;
+  viewQueued = true;
+  requestAnimationFrame(() => {
+    viewQueued = false;
+    if (!ed.long || ed.phase !== 'editing') return;
+    fitView(ctx);
+    fitView(draftCtx);
+    redrawShapes();
+    drawDraft();
+  });
+});
 
 function hideLayers(): void {
   for (const cv of [stage, draftCv]) {
@@ -378,7 +427,7 @@ function setHover(s: Shape | null): void {
     const b = shapeBounds(s);
     hud.textContent = `${MOD_DEL} or right-click to delete`;
     hud.classList.remove('hidden');
-    hud.style.transform = `translate(${clamp(b.x, 4, ed.viewW - 220)}px, ${clamp(b.y + b.h + 10, 4, ed.viewH - 30)}px)`;
+    hud.style.transform = `translate(${clamp(b.x, 4, ed.viewW - 220)}px, ${clamp(inView(b.y + b.h + 10), 4, ed.viewH - 30)}px)`;
     window.clearTimeout(ed.hudTimer);
   } else {
     hud.classList.add('hidden');
@@ -397,15 +446,21 @@ function syncToolbar(): void {
   colorWrap.style.setProperty('--c', ed.color);
   const t = activeSizeTool();
   sizeReadout.textContent = String(ed.sizes[t]);
-  sizeReadout.dataset.tip = `${SIZE_LABEL[t]} ${ed.sizes[t]}px · scroll to change`;
+  sizeReadout.dataset.tip = ed.long ? `${SIZE_LABEL[t]} ${ed.sizes[t]}px` : `${SIZE_LABEL[t]} ${ed.sizes[t]}px · scroll to change`;
   btnUndo.disabled = ed.undo.length === 0;
   document.body.style.cursor = baseCursor();
 }
 
+/** Bottom of the page: the screen, or the scrolling capture's tall image. */
+const pageH = () => (ed.long ? ed.long.y + ed.longPx.h / ed.longK : ed.viewH);
+
+/** Page y -> window y (the HUD is fixed in the window; the scrolling capture's page scrolls under it). */
+const inView = (y: number) => (ed.long ? y - window.scrollY : y);
+
 function showHud(msg: string, x: number, y: number, ms = 700): void {
   hud.textContent = msg;
   hud.classList.remove('hidden');
-  hud.style.transform = `translate(${clamp(x + 18, 4, ed.viewW - 160)}px, ${clamp(y + 18, 4, ed.viewH - 40)}px)`;
+  hud.style.transform = `translate(${clamp(x + 18, 4, ed.viewW - 160)}px, ${clamp(inView(y) + 18, 4, ed.viewH - 40)}px)`;
   window.clearTimeout(ed.hudTimer);
   ed.hudTimer = window.setTimeout(() => hud.classList.add('hidden'), ms);
 }
@@ -559,7 +614,8 @@ async function exportPNG(k = outScale()): Promise<Uint8Array> {
   out.height = Math.max(1, Math.round(s.h * k));
   const c = out.getContext('2d')!;
   c.imageSmoothingQuality = 'high'; // matters when downscaling for the 1x option
-  c.drawImage(bg, s.x * ed.k, s.y * ed.k, s.w * ed.k, s.h * ed.k, 0, 0, out.width, out.height);
+  const o = ed.long ?? { x: 0, y: 0 };
+  c.drawImage(bg, (s.x - o.x) * ed.k, (s.y - o.y) * ed.k, s.w * ed.k, s.h * ed.k, 0, 0, out.width, out.height);
   c.setTransform(k, 0, 0, k, -s.x * k, -s.y * k);
   ed.shapes.forEach((sh) => drawShape(c, sh));
   const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
@@ -570,6 +626,7 @@ async function exportPNG(k = outScale()): Promise<Uint8Array> {
 /** Export the image and send it to main (copy / copyPaste / save); main hides the overlay when done. */
 async function act(send: (png: Uint8Array) => Promise<boolean>): Promise<void> {
   if (ed.phase !== 'editing') return;
+  if (ed.long) return exportLong(send === window.api.copy ? 'copy' : send === window.api.copyPaste ? 'paste' : 'save');
   ed.phase = 'exporting'; // block a second trigger while encoding
   let ok = false;
   try {
@@ -592,7 +649,8 @@ function requestPaste(e?: KeyboardEvent): void {
   }
   paste();
 }
-const paste = () => void (ed.phase === 'text' ? copyScanned('paste') : act(window.api.copyPaste));
+const paste = () =>
+  void (ed.phase === 'text' ? copyScanned('paste') : act(window.api.copyPaste));
 
 /** Window capture: the frontmost window under p. */
 const windowAt = (p: Pt) => ed.windows.find((w) => inBox(p, w)) ?? null;
@@ -627,7 +685,7 @@ function scanText(s: Box): void {
     });
 }
 
-/** ⌘C / Enter / ⌘V / ⌘T in copy-text mode: copy the text that was read (waiting for it if needed), or its translation, then close or paste. */
+/** ⌘C / ⌘V / ⌘T in copy-text mode: copy the text that was read (waiting for it if needed), or its translation, then close or paste. */
 async function copyScanned(action: 'copy' | 'paste' | 'translate'): Promise<void> {
   const s = ed.selection;
   if (ed.phase !== 'text' || !s || !ed.scan) return;
@@ -662,7 +720,7 @@ async function copyScanned(action: 'copy' | 'paste' | 'translate'): Promise<void
 function selectAgain(): void {
   ed.phase = 'selecting';
   ed.selection = null;
-  hint.classList.remove('hidden');
+  showSelectHelp();
   hideLayers();
   syncToolbar();
   layout();
@@ -687,11 +745,238 @@ function startSelecting(p: Pt): void {
   ed.selStart = p;
   ed.selection = { x: p.x, y: p.y, w: 0, h: 0 };
   hint.classList.add('hidden');
+  guide.classList.add('hidden');
   hideLayers();
 }
 
+// ---------- scrolling capture ----------
+// Step 1 selects like area capture. Step 2 shows the real screen inside the frame (main lets the mouse through
+// to the app below and grabs the area ~10 times a second); the guide beside the frame says what to do and how
+// it is going. Step 3 shows the stitched image to copy, paste or save. The guide never covers the area.
+const guide = $<HTMLDivElement>('guide');
+const guideStep = $<HTMLSpanElement>('guideStep');
+const guideTitle = $<HTMLSpanElement>('guideTitle');
+const guideStatus = $<HTMLDivElement>('guideStatus');
+const guideTips = $<HTMLUListElement>('guideTips');
+const guideKeys = $<HTMLDivElement>('guideKeys');
+const guideThumb = $<HTMLCanvasElement>('guideThumb');
+const THUMB_W = 64; // CSS px
+const THUMB_H = 200;
+const px = (n: number) => `${n.toLocaleString('en-US')} px`;
+const SCROLL_STATUS: Record<ShoreShotScrollStatus['status'], (h: string) => string> = {
+  waiting: () => 'Ready. Scroll down inside the frame to start.',
+  ok: (h) => `Capturing · ${h} so far. Keep going.`,
+  paused: (h) => `Paused at ${h}. Keep scrolling, or press Enter if you have reached the end.`,
+  lost: () =>
+    'Lost track: too fast, scrolled up, or something in the frame is moving. Scroll back up a little until the frame turns green. ' +
+    'A video or animation in the frame keeps it red: it can\'t be stitched.',
+  outside: () => 'The mouse is outside the frame. Move it back in: only the part under the mouse scrolls.',
+};
+
+function setGuide(step: number, title: string, tips: string[], keys: [string, string][]): void {
+  guideStep.textContent = `Scrolling capture · Step ${step} of 3`;
+  guideTitle.textContent = title;
+  guideTips.replaceChildren(...tips.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  guideKeys.replaceChildren(
+    ...keys.flatMap(([k, what]) => [
+      Object.assign(document.createElement('kbd'), { textContent: k }),
+      Object.assign(document.createElement('span'), { textContent: what }),
+    ]),
+  );
+  setGuideStatus('', '');
+  guideThumb.classList.add('hidden');
+  guide.classList.remove('hidden');
+}
+
+function setGuideStatus(text: string, state: string): void {
+  guideStatus.textContent = text;
+  guideStatus.dataset.state = state;
+}
+
+/** Beside the box: right, left, below or above it, whichever fits; centered when there is no box. */
+function placeGuide(b: Box | null): void {
+  guide.classList.toggle('center', !b);
+  if (!b) return void (guide.style.transform = '');
+  const gap = 16;
+  const { offsetWidth: w, offsetHeight: h } = guide;
+  const fitsX = (x: number) => x >= 8 && x + w <= ed.viewW - 8;
+  const fitsY = (y: number) => y >= 8 && y + h <= ed.viewH - 8;
+  const y = clamp(b.y, 8, ed.viewH - h - 8);
+  const x = clamp(b.x + b.w - w, 8, ed.viewW - w - 8);
+  const spots: Pt[] = [
+    { x: b.x + b.w + gap, y },
+    { x: b.x - w - gap, y },
+    { x, y: b.y + b.h + gap },
+    { x, y: b.y - h - gap },
+  ];
+  // No room outside (a near full-screen area): bottom-right inside it. main keeps the overlay out of the
+  // grabs (content protection), so it does not end up in the image.
+  const at = spots.find((p) => fitsX(p.x) && fitsY(p.y)) ?? { x: ed.viewW - w - 16, y: ed.viewH - h - 16 };
+  guide.style.transform = `translate(${at.x}px, ${at.y}px)`;
+}
+
+/** What to do before any selection: the plain hint, or step 1 of a scrolling capture. */
+function showSelectHelp(): void {
+  if (ed.mode !== 'scroll' || ed.long) return void hint.classList.remove('hidden'); // the result: select a part of it
+  hint.classList.add('hidden');
+  setGuide(1, 'Select the part that scrolls', [
+    'Drag over the content you want in one long image, or click a window to take all of it.',
+    'Leave out what stays put while scrolling (title bars, sticky headers, chat input boxes) when you can.',
+    'Next you scroll it yourself, slowly. ShoreShot stitches the pieces as you go.',
+  ], [['Esc', 'Exit']]);
+  // Up front, where it is visible before selecting: moving content can't be stitched (Instagram feeds).
+  setGuideStatus('Works on still content only. Videos, GIFs and animations inside the frame make it lose track: leave them out of the frame.', 'outside');
+  placeGuide(null);
+}
+
+function startScroll(s: Box): void {
+  ed.selection = s;
+  ed.selStart = null;
+  ed.phase = 'scrolling';
+  ed.thumbAt = ed.thumbFor = 0;
+  hint.classList.add('hidden');
+  document.documentElement.classList.add('live'); // the frozen screenshot goes: the real screen shows through
+  selEl.dataset.state = 'waiting';
+  layout();
+  setGuide(2, 'Scroll down slowly', [
+    'Keep the mouse inside the frame and scroll down with the wheel or trackpad.',
+    'Scroll at a steady pace, without big flicks. Images still loading? Pause until they appear: ShoreShot takes the loaded version.',
+    'The frame turns red when it loses track: scroll back up a little until it turns green, then carry on.',
+  ], [['Enter', 'Finish and check the result'], ['Esc', 'Cancel']]);
+  setGuideStatus(SCROLL_STATUS.waiting(''), 'waiting');
+  placeGuide(s);
+  // Two frames so the screen really shows through before main grabs the first piece.
+  requestAnimationFrame(() => requestAnimationFrame(() => window.api.scroll.start(s)));
+}
+
+function onScrollStatus(st: ShoreShotScrollStatus): void {
+  if (ed.phase !== 'scrolling') return;
+  selEl.dataset.state = st.status;
+  // Speed in heights of the frame per second, against what the stitching can follow at this frame rate.
+  const speed = `Speed ${st.speed.toFixed(1)} frame heights/s · limit about ${Math.floor(st.limit)}`;
+  setGuideStatus(`${SCROLL_STATUS[st.status](px(st.height))}\n${speed}`, st.status);
+  // The live thumbnail: when the image grew, at most every 400 ms, one fetch at a time.
+  const now = performance.now();
+  if (st.height === ed.thumbFor || ed.thumbAt < 0 || now - ed.thumbAt < 400) return;
+  ed.thumbAt = -1;
+  void window.api.scroll
+    .preview(Math.round(THUMB_W * ed.k), Math.round(THUMB_H * ed.k))
+    .then((img) => {
+      if (!img || ed.phase !== 'scrolling') return;
+      ed.thumbFor = st.height;
+      paint(guideThumb, img);
+      guideThumb.classList.remove('hidden');
+      placeGuide(ed.selection && norm(ed.selection)); // the guide got taller
+    })
+    .finally(() => (ed.thumbAt = performance.now()));
+}
+
+function paint(cv: HTMLCanvasElement, img: { w: number; h: number; rgba: Uint8ClampedArray }): void {
+  cv.width = img.w;
+  cv.height = img.h;
+  cv.getContext('2d')!.putImageData(new ImageData(img.rgba as Uint8ClampedArray<ArrayBuffer>, img.w, img.h), 0, 0);
+  cv.style.width = `${img.w / ed.k}px`;
+  cv.style.height = `${img.h / ed.k}px`;
+}
+
+const TILE = 4096;
+const BARS_W = 140; // the two toolbars side by side on the tall page, with their gap (2 × 56 + 6, plus margin)
+const tiles = Object.assign(document.createElement('div'), { id: 'tiles' });
+bg.after(tiles); // where #bg is in the stacking order: under the frame, the shapes and the bars
+
+/** ⌘C / ⌘V / ⌘S on the tall page. main holds the image and encodes the PNG; the page only sends the rows that
+ * have shapes on them, drawn on transparent, in strips. */
+async function exportLong(action: 'copy' | 'paste' | 'save'): Promise<void> {
+  commitText();
+  ed.phase = 'exporting';
+  showHud(action === 'save' ? 'Preparing the PNG…' : 'Copying…', ed.mouse.x, ed.mouse.y, 60000);
+  const s = norm(ed.selection!);
+  const { x: ox, y: oy } = ed.long!;
+  const k = ed.longK;
+  let ok = false;
+  try {
+    if (ed.shapes.length) {
+      // Image rows that have shapes, with room for stroke ends and arrow heads.
+      const bounds = ed.shapes.map((sh) => {
+        const b = shapeBounds(sh);
+        const pad = sh.kind === 'text' ? 4 : sh.size * 3 + 12;
+        return [b.y - pad, b.y + b.h + pad];
+      });
+      const top = Math.max(0, Math.floor((Math.max(s.y, Math.min(...bounds.map((b) => b[0]))) - oy) * k));
+      const bottom = Math.min(ed.longPx.h, Math.ceil((Math.min(s.y + s.h, Math.max(...bounds.map((b) => b[1]))) - oy) * k));
+      const strip = document.createElement('canvas');
+      strip.width = ed.longPx.w;
+      for (let y = top; y < bottom; y += 1024) {
+        strip.height = Math.min(1024, bottom - y); // also clears it
+        const c = strip.getContext('2d', { willReadFrequently: true })!;
+        c.setTransform(k, 0, 0, k, -ox * k, -(oy * k + y));
+        c.beginPath();
+        c.rect(s.x, s.y, s.w, s.h);
+        c.clip();
+        ed.shapes.forEach((sh) => drawShape(c, sh));
+        await window.api.scroll.overlay(y, c.getImageData(0, 0, strip.width, strip.height).data);
+      }
+    }
+    const crop = { x: Math.round((s.x - ox) * k), y: Math.round((s.y - oy) * k), w: Math.round(s.w * k), h: Math.round(s.h * k) };
+    if (ed.phase === 'exporting') ok = await window.api.scroll.finish(action, crop);
+  } finally {
+    // Save panel cancelled, or an error: back to editing. If main hid the overlay, reset() changed phase.
+    if (!ok && ed.phase === 'exporting') {
+      ed.phase = 'editing';
+      hud.classList.add('hidden');
+    }
+  }
+}
+
+/** Done: the stitched image opens in the editor at its real size, on a page that scrolls, with every tool. */
+async function onScrollDone(d: ShoreShotScrollDone): Promise<void> {
+  if (ed.phase !== 'scrolling') return;
+  const img = await window.api.scroll.preview(d.width, d.height); // the whole image, full size
+  if (!img || ed.phase !== 'scrolling') return;
+  document.documentElement.classList.remove('live');
+  document.documentElement.classList.add('long');
+  guide.classList.add('hidden');
+  ed.barSize = ed.hintSize = null; // bigger on the tall page: measure again
+  reviewNote.classList.remove('hidden');
+  ed.windows = []; // screen window frames mean nothing on the tall page
+  bg.width = bg.height = 1; // the frozen screenshot isn't needed any more
+  // As wide as it is on screen, or shrunk to fit the window with room for the bars on its right (the page
+  // only scrolls down); centred in what is left. The export stays at full size.
+  const room = ed.viewW - BARS_W - 48;
+  ed.longK = Math.max(ed.k, img.w / room);
+  const box = { w: img.w / ed.longK, h: img.h / ed.longK, x: 0, y: 24 };
+  box.x = Math.max(16, (room - box.w) / 2 + 16);
+  ed.long = { x: box.x, y: box.y };
+  ed.longPx = { w: img.w, h: img.h };
+  // The image in strips of up to 4096 rows: a taller canvas is past what the GPU composites, so it would be
+  // drawn in software and scroll with jank. main keeps the full image for the export.
+  Object.assign(tiles.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.w}px` });
+  for (let y = 0; y < img.h; y += TILE) {
+    const th = Math.min(TILE, img.h - y);
+    const cv = document.createElement('canvas');
+    cv.width = img.w;
+    cv.height = th;
+    const rows = img.rgba.subarray(y * img.w * 4, (y + th) * img.w * 4) as Uint8ClampedArray<ArrayBuffer>;
+    cv.getContext('2d')!.putImageData(new ImageData(rows, img.w, th), 0, 0);
+    cv.style.height = `${th / ed.longK}px`;
+    tiles.append(cv);
+  }
+  document.body.style.height = `${box.y + box.h + 120}px`;
+  window.scrollTo(0, 0);
+  enterEditing(box);
+  const lost = d.lost ? ` · lost track ${d.lost}×` : '';
+  const max = d.max ? ' · stopped at the maximum height' : '';
+  showHud(
+    `${d.width.toLocaleString('en-US')} × ${px(d.height)}${max} · speed: peak ${d.peak.toFixed(1)}, average ${d.average.toFixed(1)} frame heights/s (limit about ${Math.floor(d.limit)})${lost}`,
+    box.x - 18,
+    48, // under the review note
+    6000,
+  );
+}
+
 // ---------- pointer ----------
-const pt = (e: MouseEvent): Pt => ({ x: e.clientX, y: e.clientY });
+// Page coordinates: the screen itself, or the scrolling capture's tall page.
+const pt = (e: MouseEvent): Pt => (ed.long ? { x: e.pageX, y: e.pageY } : { x: e.clientX, y: e.clientY });
 const onToolbar = (e: MouseEvent) => !!(e.target as Element).closest('#actions');
 
 window.addEventListener('mousedown', (e) => {
@@ -763,7 +1048,7 @@ window.addEventListener('mousemove', (e) => {
   }
   hoverWindow();
   if (ed.phase === 'selecting' && ed.selStart && ed.selection) {
-    const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
+    const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, pageH()) };
     ed.selection = { x: ed.selStart.x, y: ed.selStart.y, w: q.x - ed.selStart.x, h: q.y - ed.selStart.y };
     layout();
     return;
@@ -771,7 +1056,7 @@ window.addEventListener('mousemove', (e) => {
   if (ed.resize) {
     // Resize: move only the grabbed edges; dragging past the opposite edge flips (norm handles it).
     const { edge, start: s } = ed.resize;
-    const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, ed.viewH) };
+    const q = { x: clamp(p.x, 0, ed.viewW), y: clamp(p.y, 0, pageH()) };
     const x1 = edge.l ? q.x : s.x;
     const x2 = edge.r ? q.x : s.x + s.w;
     const y1 = edge.t ? q.y : s.y;
@@ -818,9 +1103,12 @@ window.addEventListener('mouseup', (e) => {
   }
   if (ed.phase === 'selecting' && ed.selStart) {
     const s = norm(ed.selection!);
-    // Click without dragging = the window under the mouse (window capture) or the whole screen.
-    const box = s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? { x: 0, y: 0, w: ed.viewW, h: ed.viewH } : s;
+    // Click without dragging = the window under the mouse (window capture), the whole screen, or the whole
+    // tall image (a scrolling capture's result).
+    const whole = ed.long ? { ...ed.long, w: ed.longPx.w / ed.longK, h: ed.longPx.h / ed.longK } : { x: 0, y: 0, w: ed.viewW, h: ed.viewH };
+    const box = s.w < 5 || s.h < 5 ? windowAt(pt(e)) ?? whole : s;
     if (ed.mode === 'text') scanText(box);
+    else if (ed.mode === 'scroll' && !ed.long) startScroll(box);
     else enterEditing(box);
     return;
   }
@@ -863,6 +1151,7 @@ window.addEventListener(
   'wheel',
   (e) => {
     if (ed.phase !== 'editing') return;
+    if (ed.long) return; // the tall page scrolls; there the size stays as it is
     e.preventDefault();
     let dir = 0;
     if (e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50) {
@@ -920,9 +1209,13 @@ window.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') return window.api.close();
+  if (ed.phase === 'scrolling') {
+    if (e.key === 'Enter') window.api.scroll.stop(); // main also takes Enter globally while scrolling
+    return;
+  }
   if (ed.phase === 'text') {
     if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
-    if ((mod && k === 'c') || e.key === 'Enter') { e.preventDefault(); void copyScanned('copy'); }
+    if (mod && k === 'c') { e.preventDefault(); void copyScanned('copy'); }
     if (mod && k === 't') { e.preventDefault(); void copyScanned('translate'); }
     return;
   }
@@ -933,7 +1226,6 @@ window.addEventListener('keydown', (e) => {
   if (mod && k === 'v') { e.preventDefault(); return requestPaste(e); }
   if (mod && k === 'c') { e.preventDefault(); void act(window.api.copy); return; }
   if (mod && k === 's') { e.preventDefault(); void act(window.api.save); return; }
-  if (e.key === 'Enter') { e.preventDefault(); void act(window.api.copy); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && ed.hover) { e.preventDefault(); return deleteShape(ed.hover); }
   if (mod) return;
   if (k === 'r') setTool('rect');
@@ -987,6 +1279,16 @@ function reset(): void {
   textInput.classList.add('hidden');
   hud.classList.add('hidden');
   hint.classList.remove('hidden');
+  guide.classList.add('hidden');
+  document.documentElement.classList.remove('live', 'long');
+  ed.long = null;
+  ed.barSize = ed.hintSize = null; // back to the normal size
+  reviewNote.classList.add('hidden');
+  tiles.replaceChildren(); // free the image
+  bg.removeAttribute('style');
+  document.body.style.height = '';
+  window.scrollTo(0, 0);
+  guideThumb.width = guideThumb.height = 1; // free the memory
   hideLayers();
   bg.width = bg.height = 1;
   layout();
@@ -1013,6 +1315,7 @@ window.api.onCapture((cap) => {
     if (cap.mode === 'text') hint.textContent = TEXT_HINT;
     syncToolbar();
     layout();
+    showSelectHelp();
   }
   // Main shows the window transparent first; reveal it once the new image has been painted (next frame).
   // macOS may treat an opacity-0 window as occluded and pause frames, so report after 50 ms regardless.
@@ -1026,6 +1329,14 @@ window.api.onCapture((cap) => {
   setTimeout(ready, 50);
 });
 window.api.onHidden(reset);
+window.api.scroll.onStatus(onScrollStatus);
+window.api.scroll.onDone((d) => void onScrollDone(d));
+// The result's ⌘C / ⌘V / ⌘S / Esc arrive as global shortcuts (the app scrolled before may hold the keyboard).
+window.api.scroll.onKey((action) => {
+  if (action === 'esc') return ed.textEdit ? cancelText() : window.api.close();
+  if (ed.textEdit) commitText();
+  void act(action === 'copy' ? window.api.copy : action === 'paste' ? window.api.copyPaste : window.api.save);
+});
 // Window capture: main sends the window frames right after the overlay becomes visible.
 window.api.onWindows((windows) => {
   if (ed.phase === 'loading') return;

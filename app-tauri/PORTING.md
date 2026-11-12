@@ -36,8 +36,8 @@ Recording permission, or the dev build will be asked for its own. It reads and w
 `config.json` and `capture.log` as the Electron app, so quit Electron ShoreShot first or the hotkeys clash.
 
 Test switches (env): `SHORESHOT_AUTO=n` runs n captures 3 s apart without a hotkey, each hidden after 1 s;
-`SHORESHOT_AUTO_MODE=area|full|window|settings` (`settings` opens the Settings window instead); `SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|Escape` presses that key in
-the page instead (full mode starts in editing, so `Enter` copies). Windows only: `SHORESHOT_TEST_MODAL=1`
+`SHORESHOT_AUTO_MODE=area|full|window|settings` (`settings` opens the Settings window instead); `SHORESHOT_AUTO_KEY=Meta+c|Meta+s|Meta+v|Escape` presses that key in
+the page instead (full mode starts in editing, so `Meta+c` copies; Enter stopped copying in the scrolling-capture change). Windows only: `SHORESHOT_TEST_MODAL=1`
 opens a MessageBox on the main thread 3 s after start (the CI safety test).
 
 ## Parity, feature by feature

@@ -122,6 +122,9 @@ html, body {
 .toolbar button:hover:not(:disabled) { background: var(--bar-hover); }
 .toolbar button:disabled { opacity: 0.35; cursor: default; }
 .toolbar button.active { background: var(--accent); color: #fff; }
+/* Copy, the main action: a check on solid green, so it reads as "done, copy it". */
+.toolbar #btnCopy { background: #34c759; color: #fff; }
+.toolbar #btnCopy:hover { background: #2fb350; }
 .toolbar svg {
   width: 18px;
   height: 18px;
@@ -206,3 +209,64 @@ html, body {
   text-align: center;
   white-space: nowrap;
 }
+
+/* ---------- scrolling capture ---------- */
+/* While scrolling, the real screen shows through: no frozen screenshot, no black page behind it. */
+html.live, html.live body { background: transparent; cursor: default; }
+html.live #bg, html.live .badge { visibility: hidden; }
+/* Frame drawn outside the area (the area itself must stay untouched: it is being grabbed), colored by status. */
+html.live .sel { --c: #3b82f6; box-shadow: 0 0 0 3px var(--c), 0 0 0 100vmax rgba(0, 0, 0, 0.35); transition: box-shadow 0.15s; }
+html.live .sel i { display: none; }
+html.live .sel[data-state="ok"] { --c: #34c759; }
+html.live .sel[data-state="lost"] { --c: #ff3b30; }
+html.live .sel[data-state="outside"] { --c: #ff9f0a; }
+
+.guide {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 300px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--bar-bg);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.14) inset;
+  color: var(--bar-fg);
+  font: 13px/1.45 var(--font);
+  pointer-events: none;
+}
+.guide.center { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.guide-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.guide-step { color: var(--bar-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.guide-title { font-size: 16px; font-weight: 650; }
+.guide-status { margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--c, #3b82f6); background: rgba(255, 255, 255, 0.06); font-weight: 500; font-variant-numeric: tabular-nums; }
+.guide-status:empty { display: none; }
+.guide-status { white-space: pre-line; }
+.guide-status[data-state="ok"] { --c: #34c759; }
+.guide-status[data-state="lost"] { --c: #ff3b30; }
+.guide-status[data-state="outside"] { --c: #ff9f0a; }
+.guide-body { display: flex; gap: 12px; align-items: flex-start; }
+.guide-thumb { flex: none; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.guide-tips { margin: 0; padding-left: 16px; color: #d1d1d6; }
+.guide-tips li + li { margin-top: 6px; }
+.guide-keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: #d1d1d6; }
+.guide kbd { justify-self: start; padding: 1px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); color: #fff; font: 600 12px/1.5 var(--font); }
+/* Scrolling capture's result: a page that scrolls, with the tall image, its frame, the shapes and the text
+   box placed on it (absolute, page coordinates); the bars and the copy/paste hint stay fixed in the window. */
+html.long, html.long body { height: auto; overflow-x: hidden; overflow-y: auto; }
+html.long .sel, html.long .badge, html.long #textInput { position: absolute; }
+/* No dimming on the tall page: a shadow as tall as the image costs a repaint on every scroll. */
+html.long .sel, html.long .sel.empty { box-shadow: inset 0 0 0 1px #3b82f6; }
+html.long #bg { display: none; }
+/* Bigger bars and copy/paste hint on the tall page, where they sit at the bottom of a large window. */
+html.long .toolbar { gap: 4px; padding: 6px; border-radius: 12px; }
+html.long .toolbar button { width: 44px; height: 44px; border-radius: 9px; }
+html.long .toolbar svg { width: 24px; height: 24px; }
+html.long .toolbar .swatch { width: 30px; height: 30px; }
+html.long .toolbar .swatch::after { width: 22px; height: 22px; }
+html.long .sep { width: 28px; }
+html.long .readout { width: 44px; font-size: 14px; }
+html.long .paste-hint { padding: 9px 16px; border-radius: 10px; color: var(--bar-fg); font-size: 16px; }
+.hint.review { top: 16px; transform: translateX(-50%); font-size: 15px; }
+#tiles { display: none; }
+html.long #tiles { display: block; position: absolute; }
+#tiles canvas { display: block; width: 100%; }
