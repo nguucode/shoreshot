@@ -62,6 +62,7 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     // Soft text (a photo, a compressed or scaled picture) loses its marks: sharpen it, as an unsharp mask.
+    // Gently: at twice this amount, large crisp text misreads ("Specs" came out as "SDecs").
     const soft = new OffscreenCanvas(canvas.width, canvas.height);
     const softCtx = soft.getContext('2d', { willReadFrequently: true });
     softCtx.filter = 'blur(2px)';
@@ -69,7 +70,7 @@
     const sharp = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const blurred = softCtx.getImageData(0, 0, canvas.width, canvas.height).data;
     const px = sharp.data; // a Uint8ClampedArray: out-of-range values clamp
-    for (let i = 0; i < px.length; i++) if (i % 4 !== 3) px[i] += 2 * (px[i] - blurred[i]);
+    for (let i = 0; i < px.length; i++) if (i % 4 !== 3) px[i] += px[i] - blurred[i];
     ctx.putImageData(sharp, 0, 0);
     const { data } = await worker.recognize(await canvas.convertToBlob(), {}, { text: false, blocks: true });
     busy = false;
