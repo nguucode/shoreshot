@@ -257,11 +257,11 @@ fn dib_from_rgba(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
 }
 
 // ---------- text recognition ----------
-/// The words in a PNG with their boxes, from Windows.Media.Ocr (built into Windows 10+, offline). One engine
-/// reads one language: Vietnamese if its language pack is installed (it reads English too), else the user's
-/// languages, else any installed recognizer. Blocks while it runs: worker thread.
+/// The words in a PNG with their boxes, from Windows.Media.Ocr (built into Windows 10+, offline). Only the
+/// fallback: the page reads with tesseract.js (web/api.js), because Windows has no Vietnamese recognizer. One
+/// engine reads one language: the user's languages, else any installed recognizer. Blocks while it runs: worker
+/// thread.
 pub fn ocr(png: &[u8]) -> Result<Vec<crate::Fragment>, String> {
-    use windows::Globalization::Language;
     use windows::Graphics::Imaging::{
         BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode,
     };
@@ -269,10 +269,6 @@ pub fn ocr(png: &[u8]) -> Result<Vec<crate::Fragment>, String> {
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
 
     let engine = || -> windows::core::Result<OcrEngine> {
-        let vi = Language::CreateLanguage(&"vi".into())?;
-        if OcrEngine::IsLanguageSupported(&vi)? {
-            return OcrEngine::TryCreateFromLanguage(&vi);
-        }
         OcrEngine::TryCreateFromUserProfileLanguages()
             .or_else(|_| OcrEngine::TryCreateFromLanguage(&OcrEngine::AvailableRecognizerLanguages()?.GetAt(0)?))
     };
