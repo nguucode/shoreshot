@@ -23,7 +23,8 @@
 
   // Windows: Windows.Media.Ocr has no Vietnamese recognizer on any machine, so the page reads the text itself
   // with tesseract.js (dist/tesseract, bundled by build-web.sh, offline). The worker starts with the first scan
-  // and stays. If it fails, the scan falls back to the system's OCR.
+  // and stays. If it fails, the scan falls back to the system's OCR. Vietnamese data only: it reads English
+  // as well, and with English loaded too, capitals lose their marks (THÁNG comes out as THANG).
   let reader;
   let busy = false;
   const tesseract = () =>
@@ -36,7 +37,7 @@
         script.onerror = () => no(new Error('tesseract.js did not load'));
         document.head.append(script);
       });
-      return Tesseract.createWorker(['vie', 'eng'], 1, {
+      return Tesseract.createWorker('vie', 1, {
         workerPath: `${base}worker.min.js`,
         corePath: base,
         langPath: base,
@@ -58,14 +59,32 @@
     // ponytail: fixed scale and size cap; pick the scale from the measured text height if small text misreads.
     const k = Math.max(1, Math.min(2, 4000 / Math.max(image.width, image.height)));
     const canvas = new OffscreenCanvas(Math.round(image.width * k), Math.round(image.height * k));
-    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    // Soft text (a photo, a compressed or scaled picture) loses its marks: sharpen it, as an unsharp mask.
+    const soft = new OffscreenCanvas(canvas.width, canvas.height);
+    const softCtx = soft.getContext('2d', { willReadFrequently: true });
+    softCtx.filter = 'blur(2px)';
+    softCtx.drawImage(canvas, 0, 0);
+    const sharp = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const blurred = softCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const px = sharp.data; // a Uint8ClampedArray: out-of-range values clamp
+    for (let i = 0; i < px.length; i++) if (i % 4 !== 3) px[i] += 2 * (px[i] - blurred[i]);
+    ctx.putImageData(sharp, 0, 0);
     const { data } = await worker.recognize(await canvas.convertToBlob(), {}, { text: false, blocks: true });
     busy = false;
-    return (data.blocks ?? [])
-      .flatMap((block) => block.paragraphs)
-      .flatMap((paragraph) => paragraph.lines)
-      .flatMap((line) => line.words)
-      .map(({ text, bbox: b }) => ({ t: text, x: b.x0 / k, y: b.y0 / k, w: (b.x1 - b.x0) / k, h: (b.y1 - b.y0) / k }));
+    const lines = (data.blocks ?? []).flatMap((block) => block.paragraphs).flatMap((paragraph) => paragraph.lines);
+    let words = lines.flatMap((line) => line.words);
+    // A picture: its shapes come out as scraps the engine is unsure of. When a quarter of the words are like
+    // that, keep only the lines with real text in them (two sure words of two letters or digits at least).
+    // ponytail: thresholds from a handful of test pictures; a label of one word on a picture is dropped.
+    const sure = (word) => word.confidence >= 70 && (word.text.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2;
+    if (words.filter((word) => word.confidence < 50).length * 4 > words.length) {
+      words = lines
+        .filter((line) => line.words.filter(sure).length >= 2)
+        .flatMap((line) => line.words.filter((word) => word.confidence >= 50));
+    }
+    return words.map(({ text, bbox: b }) => ({ t: text, x: b.x0 / k, y: b.y0 / k, w: (b.x1 - b.x0) / k, h: (b.y1 - b.y0) / k }));
   };
   const ocr = navigator.userAgent.includes('Windows')
     ? (png) =>
