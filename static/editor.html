@@ -15,6 +15,17 @@
   <div id="hint" class="hint">Drag to select an area · Click for the whole screen · Esc to exit</div>
   <textarea id="textInput" class="hidden" spellcheck="false" wrap="off" rows="1"></textarea>
   <div id="hud" class="hud hidden"></div>
+  <div id="reviewNote" class="hint review hidden">Scroll up and down to review the whole capture</div>
+  <!-- Scrolling capture: what to do at each step, and how it is going. -->
+  <div id="guide" class="guide hidden" aria-live="polite">
+    <div class="guide-head"><span id="guideStep" class="guide-step"></span><span id="guideTitle" class="guide-title"></span></div>
+    <div id="guideStatus" class="guide-status"></div>
+    <div class="guide-body">
+      <canvas id="guideThumb" class="guide-thumb hidden"></canvas>
+      <ul id="guideTips" class="guide-tips"></ul>
+    </div>
+    <div id="guideKeys" class="guide-keys"></div>
+  </div>
 
   <div id="actions" class="actions hidden">
   <div id="toolbar" class="toolbar" role="toolbar" aria-label="Annotation tools">
@@ -62,8 +73,9 @@
     <button id="btnSave" data-tip="Save as PNG ({mod}S)" aria-label="Save">
       <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
     </button>
+    <!-- A check, as in the first versions: the two-squares copy icon confused people. -->
     <button id="btnCopy" data-tip="Copy ({mod}C)" aria-label="Copy">
-      <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
     </button>
   </div>
   </div>

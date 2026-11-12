@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ShoreShot – capture, mark up, paste</title>
-<meta name="description" content="A free screenshot tool for macOS and Windows. Press one hotkey, mark it up, paste it back into the app you were using. Or copy the text out of what is on screen, and translate it.">
+<meta name="description" content="A free screenshot tool for macOS and Windows. Press one hotkey, mark it up, paste it back into the app you were using. Capture a whole scrolling page in one image, or copy the text out of what is on screen and translate it.">
 <meta property="og:title" content="ShoreShot – capture, mark up, paste">
 <meta property="og:description" content="A free screenshot tool for macOS and Windows.">
 <meta property="og:image" content="https://shoreshot.ontheshore.biz/shot-2.jpg?v=full">
@@ -127,14 +127,33 @@ section.block { padding: 120px 0 0; }
 /* Mock: tray menu */
 .menu { width: min(300px, 100%); background: var(--raised); border-radius: 14px; padding: 6px; box-shadow: 0 24px 50px -20px rgba(30, 50, 90, .35), 0 0 0 1px var(--line); font-size: 14px; text-align: left; }
 .menu div { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 8px; }
-.menu div:nth-child(-n+4) { animation: pick 8s ease-in-out infinite; }
+.menu div:nth-child(-n+5) { animation: pick 10s ease-in-out infinite; }
 .menu div:nth-child(2) { animation-delay: 2s; }
 .menu div:nth-child(3) { animation-delay: 4s; }
 .menu div:nth-child(4) { animation-delay: 6s; }
-@keyframes pick { 0%, 28.75%, 100% { background: transparent; color: inherit; } 3.75%, 25% { background: var(--accent); color: #fff; } }
-.menu div:nth-child(-n+4) kbd { color: inherit; }
+.menu div:nth-child(5) { animation-delay: 8s; }
+@keyframes pick { 0%, 23%, 100% { background: transparent; color: inherit; } 3%, 20% { background: var(--accent); color: #fff; } }
+.menu div:nth-child(-n+5) kbd { color: inherit; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
 .menu kbd { font: 12px var(--mono); color: var(--faint); }
+
+/* Mock: scrolling capture. The page moves up inside the frame while the stitched image grows beside it. */
+.card.wide { grid-column: 1 / -1; min-height: 0; }
+.roll { display: flex; align-items: center; justify-content: center; gap: 28px; }
+.roll .win, .roll .long { position: relative; overflow: hidden; background: var(--raised); }
+.roll .win { width: 220px; height: 150px; border-radius: 10px; box-shadow: 0 0 0 2px #34c759, 0 24px 50px -20px rgba(30, 50, 90, .35); }
+.roll .long { width: 120px; height: 150px; border-radius: 8px; box-shadow: 0 0 0 1px var(--line), 0 24px 50px -20px rgba(30, 50, 90, .35); animation: grow 6s linear infinite; }
+.roll .page { position: absolute; inset: 0 0 auto; height: 600px; padding: 0 16px;
+  background:
+    linear-gradient(var(--sky-2), var(--sky-3)) 16px 72px / 55% 60px no-repeat,
+    linear-gradient(var(--sky-2), var(--sky-3)) 16px 300px / 70% 70px no-repeat,
+    repeating-linear-gradient(180deg, transparent 0 14px, var(--line) 14px 20px, transparent 20px 30px) 16px 0 / 75% 100% no-repeat; }
+.roll .win .page { animation: up 6s linear infinite; }
+.roll .long .page { transform: scale(.545); transform-origin: 0 0; width: 220px; }
+.roll svg { width: 22px; height: 22px; color: var(--faint); flex: none; }
+@keyframes up { from { transform: none; } to { transform: translateY(-450px); } }
+@keyframes grow { from { height: 82px; } to { height: 327px; } }
+.card .note { display: block; color: var(--faint); font-size: 14px; text-align: center; margin: -16px 0 32px; }
 
 /* Mock: the editor toolbar, laid out flat */
 .tools { display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 16px; background: rgba(28, 28, 30, .94); box-shadow: 0 24px 50px -20px rgba(0, 0, 0, .5); }
@@ -227,6 +246,7 @@ footer a:hover { color: var(--fg); }
   .minis { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 560px) {
+  .roll { zoom: .68; } /* the frame, the arrow and the strip side by side are 418 px wide */
   .wrap { padding: 0 16px; }
   .hero { margin: 8px; border-radius: 24px; padding: 120px 16px 0; }
   .hero h1 { font-size: clamp(32px, 9.4vw, 44px); }
@@ -314,6 +334,7 @@ footer a:hover { color: var(--fg); }
             <div>Capture full screen <kbd></kbd></div>
             <div>Capture window <kbd></kbd></div>
             <div>Copy text from area <kbd>⌘⇧2</kbd></div>
+            <div>Capture scrolling <kbd></kbd></div>
             <hr>
             <div>Settings…</div>
           </div>
@@ -334,6 +355,18 @@ footer a:hover { color: var(--fg); }
             <u style="--c:#ff3b30"></u><u style="--c:#ff9500"></u><u style="--c:#ffcc00"></u><u style="--c:#34c759"></u><u style="--c:#0a84ff"></u><u style="--c:#bf5af2"></u>
           </div>
         </div>
+      </div>
+      <div class="card wide reveal">
+        <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 7v10m-3-3 3 3 3-3"/></svg>Scroll</span>
+        <h3>A whole page that scrolls, in one tall image</h3>
+        <div class="mock">
+          <div class="roll" aria-hidden="true">
+            <div class="win"><div class="page"></div></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+            <div class="long"><div class="page"></div></div>
+          </div>
+        </div>
+        <small class="note">Scroll it yourself, ShoreShot stitches as you go, then mark it up like any capture. macOS, still content only.</small>
       </div>
       <div class="card reveal">
         <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></svg>Text</span>
@@ -396,6 +429,7 @@ footer a:hover { color: var(--fg); }
       <details><summary>Is it really free?</summary><p>Yes. ShoreShot is open source under the MIT license. No paid tier, no account.</p></details>
       <details><summary>Why does macOS ask for Screen Recording?</summary><p>Every app that reads the screen needs it. Turn on ShoreShot in System Settings › Privacy &amp; Security › Screen &amp; System Audio Recording, then choose “Quit &amp; Reopen”.</p></details>
       <details><summary>Why does it ask for Accessibility?</summary><p>Only for <kbd>⌘V</kbd>, which pastes into another app for you. Copy, save and drawing work without it.</p></details>
+      <details><summary>Which pages can scrolling capture take?</summary><p>Anything that holds still while you scroll: articles, docs, chats, comment threads, feeds of pictures. Videos, GIFs and animations inside the frame make it lose track, so leave them out of the frame. Images still loading? Pause until they appear. It's on macOS for now.</p></details>
       <details><summary>Does translating send my screen anywhere?</summary><p>No image ever leaves your computer. When you press <kbd>⌘T</kbd> on text you scanned, that text goes to Google Translate and the translation comes back. Copying text works offline.</p></details>
       <details><summary>macOS says the app “is damaged”</summary><p>The app is not notarized by Apple. The install command avoids this. If you used the .dmg, run this once:</p><pre>xattr -cr /Applications/ShoreShot.app</pre></details>
       <details><summary>Windows shows a SmartScreen warning</summary><p>The installer is not code-signed. Click More info › Run anyway, or use the PowerShell command.</p></details>
@@ -460,6 +494,8 @@ watch(demo, demoLoops, .4, () => demoLoops.forEach((a) => (a.currentTime = 0)));
 const menu = document.querySelector('.menu');
 watch(menu, [...loops(menu), ...loops(document.querySelector('.tools'))], 0);
 watch(document.querySelector('.chat'), loops(document.querySelector('.chat')), 0);
+const roll = document.querySelector('.roll');
+watch(roll, loops(roll), 0);
 </script>
 </body>
 </html>

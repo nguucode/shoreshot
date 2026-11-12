@@ -1,10 +1,12 @@
-// Settings window: hotkeys (area / full screen / window capture, copy text), options (Retina 1x, open at login), version + links.
+// Settings window: hotkeys (area / full screen / window capture, copy text, scrolling capture), options (Retina 1x, open at login), version + links.
 // Wrapped in an IIFE so its globals don't clash with editor.ts.
 (() => {
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const msg = el<HTMLParagraphElement>('msg');
   const isMac = navigator.platform.toLowerCase().includes('mac');
-  const MODES: ShoreShotMode[] = ['area', 'full', 'window', 'text'];
+  const MODES: ShoreShotMode[] = ['area', 'full', 'window', 'text', 'scroll'];
+  // Scrolling capture is macOS only for now (the row stays in the page, hidden, so the code can treat all modes alike).
+  if (!isMac) el('rowScroll').style.display = 'none';
   const fields = Object.fromEntries(
     MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`)!]),
   ) as Record<ShoreShotMode, HTMLButtonElement>;

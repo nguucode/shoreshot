@@ -5,8 +5,8 @@
 //! behind web/api.js.
 //!
 //! Test switches: SHORESHOT_AUTO=n runs n captures 3 s apart without the hotkey (each hides after 1 s),
-//! SHORESHOT_AUTO_MODE=area|full|window|text|settings picks the mode, SHORESHOT_AUTO_KEY=Enter|Meta+s|Meta+v|… presses
-//! that key in the page instead of hiding (full mode starts in editing, so Enter copies).
+//! SHORESHOT_AUTO_MODE=area|full|window|text|settings picks the mode, SHORESHOT_AUTO_KEY=Meta+c|Meta+s|Meta+v|… presses
+//! that key in the page instead of hiding (full mode starts in editing, so Meta+c copies).
 // Release builds on Windows are GUI apps: no console window next to the tray icon.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // One module per platform with the same functions; main.rs only calls plat::*.
@@ -16,6 +16,7 @@ mod mac;
 use mac as plat;
 #[cfg(windows)]
 mod win;
+mod stitch;
 #[cfg(windows)]
 use win as plat;
 
@@ -37,11 +38,19 @@ const UPDATE_CHECK: Duration = Duration::from_secs(12 * 60 * 60);
 const WATCHDOG: Duration = Duration::from_millis(1500);
 
 /// Modes, indexed 0..N everywhere (config, hotkeys, tray). "text" selects an area like "area", then copies
-/// the text in it (OCR) instead of opening the editor.
-const N: usize = 4;
-const MODES: [&str; N] = ["area", "full", "window", "text"];
-const MODE_LABEL: [&str; N] = ["Capture area", "Capture full screen", "Capture window", "Copy text from area"];
-const DEFAULT_HOTKEYS: [&str; N] = ["CommandOrControl+Shift+X", "", "", "CommandOrControl+Shift+2"]; // "" = not set
+/// the text in it (OCR) instead of opening the editor. "scroll" selects an area, then the user scrolls it and
+/// the frames are stitched into one tall image (scrolling capture, macOS only for now).
+const N: usize = 5;
+const SCROLL: usize = 4;
+const MODES: [&str; N] = ["area", "full", "window", "text", "scroll"];
+const MODE_LABEL: [&str; N] =
+    ["Capture area", "Capture full screen", "Capture window", "Copy text from area", "Capture scrolling"];
+const DEFAULT_HOTKEYS: [&str; N] = ["CommandOrControl+Shift+X", "", "", "CommandOrControl+Shift+2", ""]; // "" = not set
+/// Scrolling capture: grab the area as often as the system allows, but not more than every SCROLL_TICK (a
+/// frame may move by up to 7/8 of the area's height, so more frames = faster scrolling allowed), up to
+/// SCROLL_MAX pixels tall (4 bytes a pixel: a 2,000 px wide capture at the limit holds 240 MB).
+const SCROLL_TICK: Duration = Duration::from_millis(16);
+const SCROLL_MAX: usize = 30_000;
 
 /// A piece of recognized text and its box in image pixels, top-left origin. src/renderer/ocrtext.ts lays them out.
 struct Fragment {
@@ -81,6 +90,17 @@ struct State {
     generation: AtomicUsize,
     /// Open dialogs. The overlay is never shown while one is up (v1.0.0 freeze).
     dialogs: AtomicUsize,
+    /// The display of the capture in progress and its scale (frame units: points on macOS, physical px on Windows).
+    display: Mutex<(Rect, f64)>,
+    /// Scrolling capture: 0 idle, 1 capturing, 2 finishing. The image stitched so far.
+    scroll_run: AtomicUsize,
+    scroll: Mutex<Option<stitch::Stitcher>>,
+    /// The shapes drawn on the result, for the export in progress: (first image row, RGBA rows of the full width).
+    scroll_overlays: Mutex<Vec<(usize, Vec<u8>)>>,
+    /// Scrolling capture's keys as global shortcuts, with what each does: the app being scrolled takes the
+    /// keyboard from the overlay (a click goes through to it) and the overlay can't take it back, so the
+    /// keys of the scrolling step and of the result step must reach ShoreShot whatever has the keyboard.
+    scroll_keys: Mutex<Vec<(Shortcut, &'static str)>>,
 }
 
 fn st(app: &AppHandle) -> tauri::State<'_, State> {
@@ -312,6 +332,7 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             "full" => start_capture(app, 1),
             "window" => start_capture(app, 2),
             "text" => start_capture(app, 3),
+            "scroll" => start_capture(app, SCROLL),
             "settings" => open_settings(app),
             "update" => show_update(app),
             "about" => plat::open_url(REPO_URL),
@@ -335,6 +356,9 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let act = active(app);
     let menu = Menu::new(app)?;
     for m in 0..N {
+        if m == SCROLL && cfg!(windows) {
+            continue;
+        }
         let key = if act[m] { format!("    {}", pretty_hotkey(&c.hotkeys[m])) } else { String::new() };
         menu.append(&MenuItem::with_id(app, MODES[m], format!("{}{key}", MODE_LABEL[m]), true, None::<&str>)?)?;
     }
@@ -373,8 +397,8 @@ fn open_settings(app: &AppHandle) {
     }
     let built = tauri::WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("ShoreShot Settings")
-        // The page gets 452; on macOS the title bar takes 32 of the inner size.
-        .inner_size(440.0, if cfg!(windows) { 452.0 } else { 484.0 })
+        // The page gets 452, plus 42 on macOS for the scrolling capture row; the title bar takes 32 there.
+        .inner_size(440.0, if cfg!(windows) { 452.0 } else { 526.0 })
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -584,6 +608,11 @@ fn start_capture(app: &AppHandle, m: usize) {
     if s.dialogs.load(SeqCst) > 0 {
         return log_line(&format!("{} ignored: a dialog is open", MODES[m]));
     }
+    // shortcut: the Windows overlay is an opaque WebView2 window, so the screen can't show through it while
+    // scrolling; a small guide window beside the area would do it there.
+    if m == SCROLL && cfg!(windows) {
+        return error_box(app, "Scrolling capture is only on macOS for now.".into());
+    }
     if s.open.load(SeqCst) {
         if s.visible.load(SeqCst) {
             plat::focus_overlay(app);
@@ -628,7 +657,8 @@ fn capture(app: &AppHandle, m: usize, cx: f64, cy: f64) -> Result<(), String> {
     s.open.store(true, SeqCst);
     s.visible.store(false, SeqCst);
     let generation = s.generation.fetch_add(1, SeqCst) + 1;
-    *s.windows_for.lock().unwrap() = (m == 2).then_some(frame);
+    *s.windows_for.lock().unwrap() = (m == 2 || m == SCROLL).then_some(frame);
+    *s.display.lock().unwrap() = (frame, k);
     plat::show_hidden(app, frame);
     let meta = json!({
         "mode": MODES[m],
@@ -693,6 +723,9 @@ fn hide(app: &AppHandle) {
     s.open.store(false, SeqCst);
     s.visible.store(false, SeqCst);
     *s.windows_for.lock().unwrap() = None;
+    end_scroll(app);
+    *s.scroll.lock().unwrap() = None;
+    s.scroll_overlays.lock().unwrap().clear();
     plat::hide_overlay(app);
     s.bitmap.lock().unwrap().clear();
     let _ = app.emit_to("overlay", "capture:hidden", ());
@@ -779,7 +812,10 @@ fn close(app: AppHandle) {
 
 #[tauri::command]
 fn copy(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
-    let png = png_body(&request)?;
+    copy_png(&app, png_body(&request)?)
+}
+
+fn copy_png(app: &AppHandle, png: Vec<u8>) -> Result<bool, String> {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
         hide(&a);
@@ -793,7 +829,10 @@ fn copy(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
 /// Copy, then auto-paste (⌘V) into the app that was active before the capture.
 #[tauri::command]
 fn copy_paste(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
-    let png = png_body(&request)?;
+    copy_paste_png(&app, png_body(&request)?)
+}
+
+fn copy_paste_png(app: &AppHandle, png: Vec<u8>) -> Result<bool, String> {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
         hide(&a);
@@ -834,7 +873,10 @@ fn paste_into_previous_app(app: &AppHandle, what: &'static str) {
 
 #[tauri::command]
 async fn save(app: AppHandle, request: Request<'_>) -> Result<bool, String> {
-    let png = png_body(&request)?;
+    save_png(app, png_body(&request)?).await
+}
+
+async fn save_png(app: AppHandle, png: Vec<u8>) -> Result<bool, String> {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || plat::hide_overlay(&a)); // out of the Save panel's way; still open
     let name = format!("Screenshot {}.png", plat::timestamp());
@@ -937,6 +979,273 @@ fn parse_translation(reply: &Value) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+// ---------- scrolling capture ----------
+/// The area is selected (CSS px of the display): the page shows the real screen inside the frame, mouse
+/// events go through the overlay to the app below, and a worker thread grabs and stitches the area.
+#[tauri::command]
+fn scroll_start(app: AppHandle, x: f64, y: f64, w: f64, h: f64) {
+    let s = st(&app);
+    if !s.open.load(SeqCst) || s.scroll_run.compare_exchange(0, 1, SeqCst, SeqCst).is_err() {
+        return;
+    }
+    let generation = s.generation.load(SeqCst);
+    let (frame, k) = *s.display.lock().unwrap();
+    // xcap regions are relative to the display, in its units (points on macOS, physical px on Windows).
+    let px = |v: f64| (v * k).round().max(0.0) as u32;
+    let area = (px(x), px(y), px(w).max(16), px(h).max(16));
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(win) = a.get_webview_window("overlay") {
+            let _ = win.set_ignore_cursor_events(true);
+            // The frame and guide sit outside the area; this keeps the overlay out of the grabs regardless.
+            let _ = win.set_content_protected(true);
+        }
+        take_scroll_keys(&a, &[("Enter", "stop"), ("Escape", "cancel")]);
+    });
+    std::thread::spawn(move || scroll_loop(&app, frame, area, generation));
+}
+
+/// Enter: stop grabbing and show the result.
+#[tauri::command]
+fn scroll_stop(app: AppHandle) {
+    let _ = st(&app).scroll_run.compare_exchange(1, 2, SeqCst, SeqCst);
+}
+
+/// Main thread. Registers `keys` (accelerator, action) as global shortcuts until end_scroll.
+fn take_scroll_keys(app: &AppHandle, keys: &[(&str, &'static str)]) {
+    let mut taken = vec![];
+    for &(accel, action) in keys {
+        match parse_accel(accel).filter(|sc| app.global_shortcut().register(*sc).is_ok()) {
+            Some(sc) => taken.push((sc, action)),
+            None => log_line(&format!("scroll: could not take {accel} as a global shortcut")),
+        }
+    }
+    st(app).scroll_keys.lock().unwrap().extend(taken);
+}
+
+/// A scrolling-capture key was pressed (global shortcut). Main thread.
+fn scroll_key(app: &AppHandle, action: &str) {
+    match action {
+        "stop" => scroll_stop(app.clone()),
+        "cancel" => hide(app),
+        // The result is open in the editor: the page runs these like its own keys.
+        _ => {
+            let _ = app.emit_to("overlay", "scroll:key", action);
+        }
+    }
+}
+
+/// Main thread. The overlay takes the mouse again and the keys go back to the apps.
+fn end_scroll(app: &AppHandle) {
+    let s = st(app);
+    if s.scroll_run.swap(0, SeqCst) == 0 && s.scroll_keys.lock().unwrap().is_empty() {
+        return;
+    }
+    for (sc, _) in std::mem::take(&mut *s.scroll_keys.lock().unwrap()) {
+        let _ = app.global_shortcut().unregister(sc);
+    }
+    if let Some(win) = app.get_webview_window("overlay") {
+        let _ = win.set_ignore_cursor_events(false);
+        let _ = win.set_content_protected(false);
+    }
+}
+
+fn scroll_loop(app: &AppHandle, frame: Rect, (x, y, w, h): (u32, u32, u32, u32), generation: usize) {
+    let s = st(app);
+    let live = || s.generation.load(SeqCst) == generation && s.scroll_run.load(SeqCst) == 1;
+    let fail = |e: String| {
+        log_line(&format!("scroll: {e}"));
+        if s.generation.load(SeqCst) == generation {
+            let a = app.clone();
+            let _ = app.run_on_main_thread(move || hide(&a));
+            error_box(app, format!("Scrolling capture failed: {e}"));
+        }
+    };
+    let center = ((frame.0 + frame.2 / 2.0) as i32, (frame.1 + frame.3 / 2.0) as i32);
+    let mon = match xcap::Monitor::from_point(center.0, center.1) {
+        Ok(m) => m,
+        Err(e) => return fail(e.to_string()),
+    };
+    let grab = || mon.capture_region(x, y, w, h).map(|i| (i.width() as usize, i.into_raw())).map_err(|e| e.to_string());
+    std::thread::sleep(Duration::from_millis(200)); // the page has just taken the frozen screenshot away
+    match grab() {
+        Ok((pw, px)) => *s.scroll.lock().unwrap() = Some(stitch::Stitcher::new(pw, px)),
+        Err(e) => return fail(e),
+    }
+    let (ax, ay) = (frame.0 + x as f64, frame.1 + y as f64);
+    let (mut moved, mut last) = (None::<Instant>, (String::new(), 0, 0));
+    let (mut lost, mut lost_times, mut whys) = (false, 0, Vec::<String>::new());
+    let mut size = (0, 0);
+    let mut max = false;
+    let (started, mut frames, mut prev) = (Instant::now(), 0u32, Instant::now());
+    // Speeds in frame heights per second (the area's height in pixels: frame units × scale).
+    let (mut speed, mut area_px) = (stitch::Speed::default(), 1.0);
+    // A frame may move by up to 3/4 of the area (stitch.rs MIN_OVERLAP), so the limit is 3/4 of the frame rate.
+    let limit = |frames: u32| 0.75 * f64::from(frames) / started.elapsed().as_secs_f64().max(0.001);
+    while live() {
+        let tick = Instant::now();
+        frames += 1;
+        let (px_w, px) = match grab() {
+            Ok(f) => f,
+            Err(e) => return fail(e),
+        };
+        area_px = (px.len() / (px_w * 4)) as f64;
+        let (width, height, added) = {
+            let mut g = s.scroll.lock().unwrap();
+            let Some(st) = g.as_mut().filter(|st| st.width() == px_w) else { break };
+            let added = match st.push(&px) {
+                stitch::Step::Added(d) => {
+                    (moved, lost) = (Some(Instant::now()), false);
+                    d
+                }
+                stitch::Step::Same => {
+                    lost = false;
+                    0
+                }
+                stitch::Step::Lost => {
+                    if !lost && whys.len() < 5 {
+                        whys.push(format!("{:.1} s: {}", started.elapsed().as_secs_f64(), st.why));
+                    }
+                    lost_times += usize::from(!lost);
+                    lost = true;
+                    0
+                }
+            };
+            (st.width(), st.height(), added)
+        };
+        size = (width, height);
+        let now = speed.add(started.elapsed().as_secs_f64(), prev.elapsed().as_secs_f64(), added) / area_px;
+        prev = Instant::now();
+        let (cx, cy) = plat::cursor();
+        let outside = cx < ax || cy < ay || cx >= ax + w as f64 || cy >= ay + h as f64;
+        let status = match moved {
+            _ if lost => "lost",
+            _ if outside => "outside",
+            None => "waiting",
+            Some(t) if t.elapsed() > Duration::from_millis(2500) => "paused",
+            Some(_) => "ok",
+        };
+        let tenths = (now * 10.0).round() as u32; // resend when the shown speed changes
+        if (status.to_string(), height, tenths) != last {
+            last = (status.to_string(), height, tenths);
+            let payload = json!({ "status": status, "width": width, "height": height, "speed": now, "limit": limit(frames) });
+            let _ = app.emit_to("overlay", "scroll:status", payload);
+        }
+        if height >= SCROLL_MAX {
+            max = true;
+            let _ = s.scroll_run.compare_exchange(1, 2, SeqCst, SeqCst);
+        }
+        std::thread::sleep(SCROLL_TICK.saturating_sub(tick.elapsed()));
+    }
+    let fps = f64::from(frames) / started.elapsed().as_secs_f64().max(0.001);
+    let (peak, average, limit) = (speed.peak / area_px, speed.average() / area_px, limit(frames));
+    let cancelled = s.generation.load(SeqCst) != generation || s.scroll_run.load(SeqCst) != 2;
+    // Esc: hide() has already dropped the image, so the size is the last one seen.
+    let (width, height) = s.scroll.lock().unwrap().as_ref().map_or(size, |st| (st.width(), st.height()));
+    log_line(&format!(
+        "scroll{}: {width}x{height}, {fps:.1} frames/s; speed in area heights/s: peak {peak:.1}, average {average:.1}, limit {limit:.1}; lost track {lost_times}x{}",
+        if cancelled { " (cancelled)" } else { "" },
+        if max { " (max height)" } else { "" }
+    ));
+    for why in &whys {
+        log_line(&format!("  lost at {why}"));
+    }
+    if cancelled {
+        return; // hide() already cleaned up
+    }
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        end_scroll(&a);
+        plat::focus_overlay(&a);
+        take_scroll_keys(
+            &a,
+            &[
+                ("CommandOrControl+C", "copy"),
+                ("CommandOrControl+V", "paste"),
+                ("CommandOrControl+S", "save"),
+                ("Escape", "esc"),
+            ],
+        );
+        let done = json!({ "width": width, "height": height, "max": max, "peak": peak, "average": average, "limit": limit, "lost": lost_times });
+        let _ = a.emit_to("overlay", "scroll:done", done);
+    });
+}
+
+/// The stitched image scaled to fit `w` × `max_h` pixels: 8 bytes (width, height as u32 LE), then RGBA.
+#[tauri::command]
+fn scroll_preview(app: AppHandle, w: usize, max_h: usize) -> Response {
+    let state = st(&app);
+    let g = state.scroll.lock().unwrap();
+    let Some(s) = g.as_ref() else { return Response::new(vec![]) };
+    let (tw, th, px) = s.thumbnail(w.max(1), max_h.max(1));
+    let mut out = Vec::with_capacity(8 + px.len());
+    out.extend((tw as u32).to_le_bytes());
+    out.extend((th as u32).to_le_bytes());
+    out.extend(px);
+    Response::new(out)
+}
+
+/// The shapes drawn on the result, for rows y.. of the image: 4 bytes y (u32 LE), then RGBA rows of the full
+/// width with the shapes on transparent. Only the rows that have shapes come here, so a capture nobody drew on
+/// sends nothing back.
+#[tauri::command]
+fn scroll_overlay(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    let body = png_body(&request)?;
+    let (head, rgba) = body.split_at_checked(4).ok_or("short overlay")?;
+    let y = u32::from_le_bytes(head.try_into().unwrap()) as usize;
+    st(&app).scroll_overlays.lock().unwrap().push((y, rgba.to_vec()));
+    Ok(())
+}
+
+/// Copy, copy and paste, or save the result (cropped to x, y, w, h in image pixels) with the shapes sent by
+/// scroll_overlay laid on a copy (the capture itself stays clean: a cancelled Save panel, then more drawing,
+/// must not leave old shapes behind), encoded here: the page never turns the whole tall image into a PNG.
+// ponytail: native resolution only; scale down for the "Export at 1x" option when someone asks for it.
+#[tauri::command]
+async fn scroll_finish(app: AppHandle, action: String, x: u32, y: u32, w: u32, h: u32) -> Result<bool, String> {
+    let a = app.clone();
+    let overlays = std::mem::take(&mut *st(&app).scroll_overlays.lock().unwrap());
+    let encode = move || -> Result<Vec<u8>, String> {
+        use xcap::image::ImageEncoder as _;
+        let state = st(&a);
+        let g = state.scroll.lock().unwrap();
+        let s = g.as_ref().ok_or("nothing captured")?;
+        let (sw, sh) = (s.width() as u32, s.height() as u32);
+        let (x, y) = (x.min(sw - 1), y.min(sh - 1));
+        let (w, h) = (w.clamp(1, sw - x), h.clamp(1, sh - y));
+        let row = sw as usize * 4;
+        // The selected rows at full width, the shapes on them, then the selected columns.
+        let mut rows = s.rgba()[y as usize * row..(y + h) as usize * row].to_vec();
+        for (oy, over) in &overlays {
+            let skip = (y as usize).saturating_sub(*oy) * row; // overlay rows above the selection
+            let at = oy.saturating_sub(y as usize) * row;
+            if skip < over.len() && at < rows.len() {
+                stitch::blend(&mut rows[at..], &over[skip..]);
+            }
+        }
+        let mut crop = Vec::with_capacity((w * h * 4) as usize);
+        for r in rows.chunks_exact(row) {
+            crop.extend_from_slice(&r[x as usize * 4..(x + w) as usize * 4]);
+        }
+        let mut png = Vec::new();
+        let (fast, adaptive) = (xcap::image::codecs::png::CompressionType::Fast, xcap::image::codecs::png::FilterType::Adaptive);
+        xcap::image::codecs::png::PngEncoder::new_with_quality(&mut png, fast, adaptive)
+            .write_image(&crop, w, h, xcap::image::ExtendedColorType::Rgba8)
+            .map_err(|e| e.to_string())?;
+        Ok(png)
+    };
+    let t = Instant::now();
+    let png = tauri::async_runtime::spawn_blocking(encode).await.map_err(|e| e.to_string())?;
+    let png = png.inspect_err(|e| log_line(&format!("scroll export failed: {e}")))?;
+    log_line(&format!("scroll export: {} KB PNG in {} ms", png.len() / 1024, t.elapsed().as_millis()));
+    match action.as_str() {
+        "copy" => copy_png(&app, png),
+        "paste" => copy_paste_png(&app, png),
+        "save" => save_png(app, png).await,
+        _ => Err("unknown action".into()),
+    }
+}
+
 #[tauri::command]
 fn log(line: String) {
     log_line(&line);
@@ -959,6 +1268,12 @@ fn main() {
                     if ev.state != ShortcutState::Pressed {
                         return;
                     }
+                    let action = st(app).scroll_keys.lock().unwrap().iter().find(|(k, _)| k == sc).map(|k| k.1);
+                    if let Some(action) = action {
+                        let a = app.clone();
+                        let _ = app.run_on_main_thread(move || scroll_key(&a, action));
+                        return;
+                    }
                     let m = st(app).hotkeys.lock().unwrap().iter().position(|h| h.as_ref() == Some(sc));
                     if let Some(m) = m {
                         start_capture(app, m);
@@ -976,6 +1291,11 @@ fn main() {
             ocr,
             copy_text,
             translate,
+            scroll_start,
+            scroll_stop,
+            scroll_preview,
+            scroll_overlay,
+            scroll_finish,
             log,
             settings_get,
             settings_set_hotkey,
@@ -1046,6 +1366,8 @@ mod tests {
         assert_eq!(pretty_hotkey("CommandOrControl+Shift+X"), if cfg!(windows) { "Ctrl+Shift+X" } else { "⌘⇧X" });
         assert!(parse_accel("Command+Alt+numsub").is_some() && parse_accel("Control+Shift+Up").is_some());
         assert!(parse_accel("Shift+nope").is_none());
+        // scrolling capture's keys
+        assert!(["Enter", "Escape", "CommandOrControl+C", "CommandOrControl+S"].iter().all(|k| parse_accel(k).is_some()));
         let d = (0.0, 0.0, 1000.0, 800.0);
         assert_eq!(clip((-10.0, 100.0, 300.0, 200.0), d, 1.0), Some((0.0, 100.0, 290.0, 200.0)));
         assert_eq!(clip((0.0, 0.0, 1000.0, 24.0), d, 1.0), None); // menu bar
