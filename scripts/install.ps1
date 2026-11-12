@@ -132,11 +132,27 @@ function Install-FromRelease {
       Start-Sleep -Seconds (3 * $i)
     }
   }
-  if (-not $rel) { Die "Could not reach GitHub. Check your connection and run the command again." }
-  $asset = $rel.assets | Where-Object { $_.name -like "$AppName-Setup-*.exe" } | Select-Object -First 1
+  if ($rel) {
+    $asset = $rel.assets | Where-Object { $_.name -like "$AppName-Setup-*.exe" } | Select-Object -First 1
+  } else {
+    # The API allows 60 anonymous calls an hour per IP address, shared by everyone behind it. Without it,
+    # github.com/<repo>/releases/latest redirects to .../releases/tag/v<version>, and the files are named
+    # after that version (no size to check against, so any complete download counts).
+    try {
+      $req = [System.Net.WebRequest]::Create("https://github.com/$Repo/releases/latest")
+      $req.Method = 'HEAD'
+      $req.UserAgent = 'shoreshot-installer'
+      $resp = $req.GetResponse()
+      $tag = $resp.ResponseUri.AbsolutePath.Split('/')[-1]
+      $resp.Close()
+    } catch { Die "Could not reach GitHub. Check your connection and run the command again." }
+    if ($tag -notlike 'v*') { return $false }
+    $name = "$AppName-Setup-$($tag.Substring(1)).exe"
+    $asset = [pscustomobject]@{ name = $name; size = 0; browser_download_url = "https://github.com/$Repo/releases/download/$tag/$name" }
+  }
   if (-not $asset) { return $false }
   $setup = Join-Path $Tmp $asset.name
-  Say "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..."
+  Say $(if ($asset.size) { "Downloading $($asset.name) ($([math]::Round($asset.size / 1MB, 1)) MB)..." } else { "Downloading $($asset.name)..." })
   if (-not (Get-File -Url $asset.browser_download_url -OutFile $setup -ExpectedSize $asset.size)) {
     Die ("Could not download the installer from GitHub (server busy or network blocked). " +
          "Run this command again in a few minutes, or download it manually: https://github.com/$Repo/releases/latest")

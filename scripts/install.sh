@@ -61,10 +61,17 @@ APP_SRC=""
 download_release() {
   say "Looking up the latest build on GitHub Releases..."
   local api="https://api.github.com/repos/$REPO/releases/latest"
-  local json url
-  json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null)" || return 1
+  local json url tag
+  json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null)"
   url="$(printf '%s' "$json" | grep -o '"browser_download_url": *"[^"]*-mac-'"$ARCH"'\.zip"' | head -n1 | sed 's/.*"\(https[^"]*\)"/\1/')"
-  [ -n "$url" ] || return 1
+  if [ -z "$url" ]; then
+    # The API allows 60 anonymous calls an hour per IP address, shared by everyone behind it. Without it,
+    # github.com/<repo>/releases/latest redirects to .../releases/tag/v<version>, and the files are named
+    # after that version.
+    tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')"
+    [ -n "$tag" ] || return 1
+    url="https://github.com/$REPO/releases/download/$tag/$APP_NAME-${tag#v}-mac-$ARCH.zip"
+  fi
   say "Downloading $(basename "$url")..."
   curl -fL --progress-bar "$url" -o "$TMP/app.zip" || return 1
   ditto -x -k "$TMP/app.zip" "$TMP/unzipped" || return 1
