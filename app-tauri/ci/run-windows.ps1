@@ -219,7 +219,8 @@ function Suite($app, $p) {
   }
   $list.Controls.Add($box)
   $list.Show(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
-  $box.SelectionStart = 0; $box.ScrollToCaret()
+  # Shown with focus, a text box selects all of its text and scrolls to the end: back to the first line.
+  $box.Select(0, 0); $box.ScrollToCaret(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
   Start-Sleep -Milliseconds 500
   Key Ctrl, Shift, S
   $shown = WaitFor { [K]::Overlay($id) }
