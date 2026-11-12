@@ -161,7 +161,7 @@ function Suite($app, $p) {
   Check $app 'Window mode copies the clicked window' ($clip.W -ge 570 -and $clip.W -le 600 -and $clip.H -ge 370 -and $clip.H -le 400) $clip.Size
 
   # 4. Copy text: a borderless white window with three texts at a known rect, drag over it, Enter, read the clipboard.
-  # "Overview" and "Specs" share a row far apart, so they must come out on separate lines.
+  # "Overview" and "Tiếng Việt" share a row far apart, so they must come out on separate lines.
   # The app reads with its own tesseract.js (Windows.Media.Ocr has no Vietnamese), so the Vietnamese text must
   # come out with its marks, whatever OCR languages the runner has.
   [System.Windows.Forms.Clipboard]::Clear()
@@ -170,9 +170,10 @@ function Suite($app, $p) {
     Location = (New-Object System.Drawing.Point(150, 120)); Size = (New-Object System.Drawing.Size(600, 400))
     BackColor = 'White'; TopMost = $true; ShowInTaskbar = $false
   }
-  # "Tiếng Việt có dấu", spelled with char codes: Windows PowerShell reads a script without a BOM as ANSI.
-  $vi = "Ti$([char]0x1EBF)ng Vi$([char]0x1EC7)t c$([char]0xF3) d$([char]0x1EA5)u"
-  foreach ($t in @(@('Overview', 30, 60), @('Specs', 360, 60), @($vi, 30, 200))) {
+  # "Tiếng Việt" and "có dấu", spelled with char codes: Windows PowerShell reads a script without a BOM as ANSI.
+  # (The second text was "Specs": the Vietnamese data misreads that one word at this size, as "SDeCS".)
+  $vi1 = "Ti$([char]0x1EBF)ng Vi$([char]0x1EC7)t"; $vi2 = "c$([char]0xF3) d$([char]0x1EA5)u"
+  foreach ($t in @(@('Overview', 30, 60), @($vi1, 360, 60), @($vi2, 30, 200))) {
     $form.Controls.Add((New-Object System.Windows.Forms.Label -Property @{
       Text = $t[0]; Location = (New-Object System.Drawing.Point($t[1], $t[2])); AutoSize = $true; ForeColor = 'Black'
       Font = (New-Object System.Drawing.Font('Segoe UI', 28))
@@ -193,7 +194,7 @@ function Suite($app, $p) {
   $form.Close()
   $text = [System.Windows.Forms.Clipboard]::GetText()
   $got = (($text -split "`r?`n") | ForEach-Object { $_.Trim() }) -join ' | '
-  Check $app 'Copy text reads the selection, Vietnamese included' ($shown -and $hidden -and $got -eq "Overview | Specs | $vi") "'$got'"
+  Check $app 'Copy text reads the selection, Vietnamese included' ($shown -and $hidden -and $got -eq "Overview | $vi1 | $vi2") "'$got'"
 
   $script:after[$app] = Tree-Memory $p.Id
   & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
