@@ -44,7 +44,7 @@ const ed = {
   selStart: null as Pt | null,
   tool: 'rect' as Tool,
   color: '#ff3b30',
-  sizes: { rect: 4, ellipse: 4, line: 4, arrow: 4, pen: 4, text: 28 } as Record<Tool, number>,
+  sizes: { rect: 2, ellipse: 2, line: 2, arrow: 2, pen: 2, text: 18 } as Record<Tool, number>,
   shapes: [] as Shape[],
   undo: [] as Shape[][], // earlier versions of shapes (each change replaces the array)
   redo: [] as Shape[][],
