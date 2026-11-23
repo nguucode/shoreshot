@@ -202,45 +202,12 @@ function Suite($app, $p) {
   $got = (($text -split "`r?`n") | ForEach-Object { $_.Trim() }) -join ' | '
   Check $app 'Copy text reads the selection, Vietnamese included' ($shown -and $hidden -and $got -eq "Overview | $vi1 | $vi2") "'$got'"
 
-  # 5. Scrolling capture: a window with a long list of distinct lines at a known rect. Select inside it, click
-  # through the hole in the overlay, scroll it with the wheel, Enter (finish), Ctrl+C on the result. The
-  # stitched image must be much taller than the selection.
-  [System.Windows.Forms.Clipboard]::Clear()
-  $list = New-Object System.Windows.Forms.Form -Property @{
-    FormBorderStyle = 'None'; StartPosition = 'Manual'
-    Location = (New-Object System.Drawing.Point(150, 120)); Size = (New-Object System.Drawing.Size(600, 400))
-    TopMost = $true; ShowInTaskbar = $false
-  }
-  $box = New-Object System.Windows.Forms.TextBox -Property @{
-    Multiline = $true; ReadOnly = $true; ScrollBars = 'Vertical'; Dock = 'Fill'; BackColor = 'White'
-    Font = (New-Object System.Drawing.Font('Consolas', 14))
-    # Lines of different lengths, so each one is distinct ('abcdefghij' * 5 is 50 characters, the most taken).
-    Text = ((1..300 | ForEach-Object { "Line $_ " + ('abcdefghij' * 5).Substring(0, 8 + ($_ * 7) % 40) }) -join "`r`n")
-  }
-  $list.Controls.Add($box)
-  $list.Show(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
-  # Shown with focus, a text box selects all of its text and scrolls to the end: back to the first line.
-  $box.Select(0, 0); $box.ScrollToCaret(); $list.Refresh(); [System.Windows.Forms.Application]::DoEvents()
-  Start-Sleep -Milliseconds 500
+  # 5. Scrolling capture is off on Windows (SCROLL_OFF in main.rs): its saved hotkey must not open the overlay.
+  # The full scrolling test is in git history (v2.3.0) for when it comes back.
   Key Ctrl, Shift, S
-  $shown = WaitFor { [K]::Overlay($id) }
-  Start-Sleep -Milliseconds 700
-  [K]::Drag(170, 140, 700, 500); Start-Sleep -Milliseconds 800 # the first frame is grabbed 200 ms in
-  [K]::Click(430, 320); Start-Sleep -Milliseconds 300 # goes through the hole: the text box takes the wheel
-  Shot "$app-scroll-live"
-  for ($i = 0; $i -lt 8; $i++) { [K]::Wheel(430, 320, 2); Start-Sleep -Milliseconds 250; [System.Windows.Forms.Application]::DoEvents() }
-  Start-Sleep -Milliseconds 500
-  Key Enter # finish (a global shortcut while scrolling)
-  Start-Sleep -Milliseconds 2000 # the result opens in the editor
-  Shot "$app-scroll-result"
-  Key Ctrl, C
-  $hidden = WaitFor { -not [K]::Overlay($id) } 10000
-  if (-not $hidden) { Key Esc; WaitFor { -not [K]::Overlay($id) } | Out-Null }
-  Start-Sleep -Milliseconds 500
-  $list.Close()
-  $clip = Clipboard-Image
-  $line = Get-Content $TauriLog -ErrorAction SilentlyContinue | Where-Object { $_ -match 'scroll: ' } | Select-Object -Last 1
-  Check $app 'Scrolling capture stitches a tall image and copies it' ($shown -and $hidden -and $clip.W -ge 500 -and $clip.H -ge 720) "$($clip.Size); $line"
+  $shown = WaitFor { [K]::Overlay($id) } 1500
+  if ($shown) { Key Esc; WaitFor { -not [K]::Overlay($id) } | Out-Null }
+  Check $app 'Scrolling capture is off: its hotkey does nothing' (-not $shown)
 
   $script:after[$app] = Tree-Memory $p.Id
   & taskkill /PID $p.Id /T /F 2>&1 | Out-Null
