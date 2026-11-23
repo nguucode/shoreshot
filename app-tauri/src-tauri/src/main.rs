@@ -42,6 +42,11 @@ const WATCHDOG: Duration = Duration::from_millis(1500);
 /// the frames are stitched into one tall image (scrolling capture).
 const N: usize = 5;
 const SCROLL: usize = 4;
+/// Scrolling capture is turned off on Windows for now: no tray item, no hotkey, no Settings row.
+const SCROLL_OFF: bool = cfg!(windows);
+const fn mode_on(m: usize) -> bool {
+    !(SCROLL_OFF && m == SCROLL)
+}
 const MODES: [&str; N] = ["area", "full", "window", "text", "scroll"];
 const MODE_LABEL: [&str; N] =
     ["Capture area", "Capture full screen", "Capture window", "Copy text from area", "Capture scrolling"];
@@ -225,7 +230,7 @@ fn parse_accel(accel: &str) -> Option<Shortcut> {
 }
 
 fn register(app: &AppHandle, m: usize, accel: &str) -> bool {
-    let Some(sc) = (!accel.is_empty()).then(|| parse_accel(accel)).flatten() else { return false };
+    let Some(sc) = (mode_on(m) && !accel.is_empty()).then(|| parse_accel(accel)).flatten() else { return false };
     let ok = app.global_shortcut().register(sc).is_ok();
     if ok {
         st(app).hotkeys.lock().unwrap()[m] = Some(sc);
@@ -355,7 +360,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let c = config(app);
     let act = active(app);
     let menu = Menu::new(app)?;
-    for m in 0..N {
+    for m in (0..N).filter(|&m| mode_on(m)) {
         let key = if act[m] { format!("    {}", pretty_hotkey(&c.hotkeys[m])) } else { String::new() };
         menu.append(&MenuItem::with_id(app, MODES[m], format!("{}{key}", MODE_LABEL[m]), true, None::<&str>)?)?;
     }
@@ -601,6 +606,9 @@ fn ensure_permission(app: &AppHandle) {
 // ---------- capture ----------
 /// Hotkey / tray -> overlay. Main thread, synchronous up to showing the overlay.
 fn start_capture(app: &AppHandle, m: usize) {
+    if !mode_on(m) {
+        return;
+    }
     let s = st(app);
     if s.dialogs.load(SeqCst) > 0 {
         return log_line(&format!("{} ignored: a dialog is open", MODES[m]));
@@ -1298,7 +1306,7 @@ fn main() {
             create_tray(&handle)?;
             plat::create_overlay(&handle)?; // created up front so the hotkey shows it instantly
             let c = config(&handle);
-            if (0..N).any(|m| !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
+            if (0..N).any(|m| mode_on(m) && !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
                 open_settings(&handle); // a saved hotkey is taken by another app: let the user pick another
             }
             let h = handle.clone();

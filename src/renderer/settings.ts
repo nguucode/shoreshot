@@ -4,6 +4,7 @@
   const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const msg = el<HTMLParagraphElement>('msg');
   const isMac = navigator.platform.toLowerCase().includes('mac');
+  if (!isMac) el('rowScroll').style.display = 'none'; // scrolling capture is off on Windows (main.rs SCROLL_OFF)
   const MODES: ShoreShotMode[] = ['area', 'full', 'window', 'text', 'scroll'];
   const fields = Object.fromEntries(
     MODES.map((m) => [m, document.querySelector<HTMLButtonElement>(`[data-mode="${m}"]`)!]),
@@ -177,7 +178,7 @@
       el('linkUpdate').classList.remove('hidden');
     }
     showCurrent();
-    const blocked = MODES.find((m) => hotkeys[m].hotkey && !hotkeys[m].active);
+    const blocked = MODES.find((m) => hotkeys[m].hotkey && !hotkeys[m].active && (isMac || m !== 'scroll'));
     if (blocked) {
       setMsg(`${hotkeys[blocked].pretty} is used by another app, so it isn't active. Click its field to pick another.`, 'error');
     } else {
