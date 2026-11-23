@@ -178,7 +178,7 @@
       el('linkUpdate').classList.remove('hidden');
     }
     showCurrent();
-    const blocked = MODES.find((m) => hotkeys[m].hotkey && !hotkeys[m].active);
+    const blocked = MODES.find((m) => hotkeys[m].hotkey && !hotkeys[m].active && (isMac || m !== 'scroll'));
     if (blocked) {
       setMsg(`${hotkeys[blocked].pretty} is used by another app, so it isn't active. Click its field to pick another.`, 'error');
     } else {

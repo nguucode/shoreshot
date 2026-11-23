@@ -1306,7 +1306,7 @@ fn main() {
             create_tray(&handle)?;
             plat::create_overlay(&handle)?; // created up front so the hotkey shows it instantly
             let c = config(&handle);
-            if (0..N).any(|m| !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
+            if (0..N).any(|m| mode_on(m) && !c.hotkeys[m].is_empty() && !active(&handle)[m]) {
                 open_settings(&handle); // a saved hotkey is taken by another app: let the user pick another
             }
             let h = handle.clone();
