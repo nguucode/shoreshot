@@ -12,6 +12,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Windows reports reduced motion whenever its "Animation effects" switch is off (VMs, Remote Desktop, "best performance"),
+// so the page only honours that setting elsewhere, where Reduce Motion is a deliberate accessibility choice.
+if (/Windows/.test(navigator.userAgent)) document.documentElement.classList.add('win');
+</script>
 <style>
 :root {
   --bg: #fff; --fg: #111113; --muted: #6b6b73; --faint: #a1a1aa; --line: #ececee; --card: #f5f5f6; --raised: #fff;
@@ -262,11 +267,11 @@ footer a:hover { color: var(--fg); }
   .stage { margin-top: 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .demo .f1 { clip-path: none; }
-  .demo .f2 { opacity: 1; }
-  .track, .scan .frame::after { display: none; }
-  .rise, .js .reveal, .ln { opacity: 1; transform: none; }
+  :root:not(.win) *, :root:not(.win) *::before, :root:not(.win) *::after { animation: none !important; transition: none !important; }
+  :root:not(.win) .demo .f1 { clip-path: none; }
+  :root:not(.win) .demo .f2 { opacity: 1; }
+  :root:not(.win) .track, :root:not(.win) .scan .frame::after { display: none; }
+  :root:not(.win) .rise, :root.js:not(.win) .reveal, :root:not(.win) .ln { opacity: 1; transform: none; }
 }
 </style>
 </head>
@@ -459,7 +464,7 @@ footer a:hover { color: var(--fg); }
 </footer>
 
 <script>
-const isWin = /Windows/.test(navigator.userAgent);
+const isWin = document.documentElement.classList.contains('win');
 const cmd = document.getElementById('cmd');
 if (isWin) cmd.textContent = 'irm https://raw.githubusercontent.com/nguucode/shoreshot/main/scripts/install.ps1 | iex';
 
