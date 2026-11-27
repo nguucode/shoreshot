@@ -1,0 +1,47 @@
+name: motion
+# Landing page motion in real Chrome: Windows must animate even with Animation effects off; a Mac with Reduce Motion must not.
+# Results: motion-out artifacts (motion.json + screenshots per run).
+on:
+  push:
+    branches: [main]
+    paths: ['docs/index.html', '.github/motion/**', '.github/workflows/motion.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  record:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm i puppeteer-core@23 --no-save --no-package-lock --prefix .github/motion
+      - name: Windows, Animation effects as the runner has them
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: node .github/motion/motion.mjs win-default
+      - name: Windows, Animation effects switched off (SPI_SETCLIENTAREAANIMATION)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Add-Type -Name S -Namespace W -MemberDefinition '[DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d);'
+          [W.S]::SystemParametersInfo(0x1043, 0, [IntPtr]::Zero, 3) | Out-Null
+          node .github/motion/motion.mjs win-effects-off
+      - name: Windows, Chrome forced to reduced motion
+        if: runner.os == 'Windows'
+        run: node .github/motion/motion.mjs win-forced-reduce --force-prefers-reduced-motion
+      - name: macOS
+        if: runner.os == 'macOS'
+        run: node .github/motion/motion.mjs mac
+      - name: macOS, Reduce Motion on
+        if: runner.os == 'macOS'
+        run: node .github/motion/motion.mjs mac-reduce --force-prefers-reduced-motion
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motion-${{ runner.os }}
+          path: motion-out
