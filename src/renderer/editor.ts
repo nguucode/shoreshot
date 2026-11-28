@@ -821,7 +821,7 @@ function showSelectHelp(): void {
   hint.classList.add('hidden');
   setGuide(1, 'Select the part that scrolls', [
     'Drag over the content you want in one long image, or click a window to take all of it.',
-    'Leave out what stays put while scrolling (title bars, sticky headers, chat input boxes) when you can.',
+    'Leave out what stays put while scrolling (title bars, sticky headers, sidebars, chat input boxes): select only the part that moves.',
     'Next you scroll it yourself, slowly. ShoreShot stitches the pieces as you go.',
   ], [['Esc', 'Exit']]);
   // Up front, where it is visible before selecting: moving content can't be stitched (Instagram feeds).
